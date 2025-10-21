@@ -13,7 +13,7 @@ class ScheduledNotificationService {
     /**
      * Start the scheduled notification service
      */
-    async start() {
+    start() {
         if (this.isRunning) {
             console.log('Scheduled notification service is already running');
             return;
@@ -21,37 +21,6 @@ class ScheduledNotificationService {
 
         this.isRunning = true;
         console.log('🕐 Starting scheduled notification service...');
-
-        // Ensure notification throttling table exists
-        try {
-            const db = require('../config/db');
-            const connection = await db.getConnection();
-
-            try {
-                // Check if notification_throttling table exists
-                await connection.query(`
-                    CREATE TABLE IF NOT EXISTS notification_throttling (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        notification_type VARCHAR(50) UNIQUE NOT NULL,
-                        last_sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                    )
-                `);
-
-                // Insert default throttling records if they don't exist
-                await connection.query(`
-                    INSERT IGNORE INTO notification_throttling (notification_type) 
-                    VALUES ('low_stock_critical'), ('low_stock_low')
-                `);
-
-                console.log('✅ Notification throttling table initialized');
-            } finally {
-                connection.release();
-            }
-        } catch (error) {
-            console.error('❌ Error initializing notification throttling:', error);
-        }
 
         // Schedule critical stock notifications at 8:00 AM daily, with fallback to next available time
         this.criticalJob = cron.schedule('0 8 * * *', async() => {
@@ -118,11 +87,6 @@ class ScheduledNotificationService {
         try {
             console.log('🔍 Checking for critical stock items...');
 
-            // Add database connection test
-            const db = require('../config/db');
-            const connection = await db.getConnection();
-            connection.release();
-
             const lowStockItems = await lowStockMonitorService.getLowStockItems();
             const criticalItems = lowStockItems.filter(item => item.stock_status === 'out_of_stock');
 
@@ -137,7 +101,6 @@ class ScheduledNotificationService {
 
                     // Trigger the low stock check which will handle the throttling
                     await lowStockMonitorService.checkLowStockItems();
-                    console.log('✅ Critical stock notification sent successfully');
                 } else {
                     console.log('⏰ Critical stock notification already sent recently, skipping scheduled check');
                 }
@@ -146,19 +109,6 @@ class ScheduledNotificationService {
             }
         } catch (error) {
             console.error('❌ Error in scheduled critical stock check:', error);
-            console.error('❌ Error details:', {
-                message: error.message,
-                stack: error.stack,
-                name: error.name
-            });
-
-            // Try to continue with other notifications even if critical fails
-            try {
-                console.log('🔄 Attempting to continue with low stock notifications...');
-                await this.checkAndSendLowStockNotifications();
-            } catch (fallbackError) {
-                console.error('❌ Fallback notification also failed:', fallbackError);
-            }
         }
     }
 
@@ -168,11 +118,6 @@ class ScheduledNotificationService {
     async checkAndSendLowStockNotifications() {
         try {
             console.log('🔍 Checking for low stock items...');
-
-            // Add database connection test
-            const db = require('../config/db');
-            const connection = await db.getConnection();
-            connection.release();
 
             const lowStockItems = await lowStockMonitorService.getLowStockItems();
             const lowStockOnly = lowStockItems.filter(item => item.stock_status === 'low_stock');
@@ -188,7 +133,6 @@ class ScheduledNotificationService {
 
                     // Trigger the low stock check which will handle the throttling
                     await lowStockMonitorService.checkLowStockItems();
-                    console.log('✅ Low stock notification sent successfully');
                 } else {
                     console.log('⏰ Low stock notification already sent recently, skipping scheduled check');
                 }
@@ -197,11 +141,6 @@ class ScheduledNotificationService {
             }
         } catch (error) {
             console.error('❌ Error in scheduled low stock check:', error);
-            console.error('❌ Error details:', {
-                message: error.message,
-                stack: error.stack,
-                name: error.name
-            });
         }
     }
 

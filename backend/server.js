@@ -508,18 +508,13 @@ server.listen(PORT, () => {
                 const [tables] = await db.query(`SHOW TABLES LIKE 'notifications'`);
                 if (tables.length > 0) {
                     const scheduledNotificationService = require('./services/scheduledNotificationService');
-                    await scheduledNotificationService.start();
+                    scheduledNotificationService.start();
                     console.log(`📧 Scheduled notification service started`);
                 } else {
                     console.log(`⚠️  Scheduled notification service not started - notifications table not ready`);
                 }
             } catch (error) {
                 console.error('❌ Failed to start scheduled notification service:', error.message);
-                console.error('❌ Error details:', {
-                    message: error.message,
-                    stack: error.stack,
-                    name: error.name
-                });
             }
         })();
     } else {
