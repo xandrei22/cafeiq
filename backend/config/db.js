@@ -23,10 +23,10 @@ if (process.env.MYSQL_URL) {
 } else {
     // Use individual environment variables
     connectionConfig = {
-        host: process.env.DB_HOST || 'rolley.proxy.rlwy.net',
+        host: process.env.DB_HOST || 'localhost',
         user: process.env.DB_USER || 'root',
-        password: process.env.DB_PASSWORD || 'dzHhiqduUpygZMFcXctzLnmwVfARAwes',
-        database: process.env.DB_NAME || 'railway',
+        password: process.env.DB_PASSWORD || '',
+        database: process.env.DB_NAME || 'cafeiq',
         waitForConnections: true,
         connectionLimit: 20,
         queueLimit: 0,
