@@ -43,6 +43,8 @@ if (process.env.MYSQL_URL) {
     console.log('✅ Using local .env configuration');
 }
 
+// Create a connection pool for better performance
+const pool = mysql.createPool(connectionConfig);
 
 // Test the connection
 pool.getConnection()

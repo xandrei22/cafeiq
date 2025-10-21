@@ -279,20 +279,5 @@ async function main() {
 }
 
 main().catch(err => {
-    console.error('Menu seed script fatal error:', err);
-    process.exit(1);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+            console.error('Menu seed script fatal error:', err);
+            process.exit(1);
