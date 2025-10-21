@@ -47,7 +47,6 @@ import StaffLanding from "./components/staff/StaffLanding";
 import StaffDashboard from "./components/staff/StaffDashboard";
 import StaffInventory from "./components/staff/StaffInventory";
 import StaffOrders from "./components/staff/StaffOrders";
-import StaffPOS from "./components/staff/StaffPOS";
 import StaffLoyalty from "./components/staff/StaffLoyalty";
 import StaffRewardProcessing from "./components/staff/StaffRewardProcessing";
 import StaffSales from "./components/staff/StaffSales";
@@ -116,11 +115,17 @@ function App() {
         <Route path="/customer/forgot-password" element={<CustomerForgotPassword />} />
         <Route path="/customer/reset-password/:token" element={<CustomerResetPassword />} />
         <Route path="/customer/payment" element={<CustomerPayment />} />
-        <Route path="/customer/payment-qr" element={<CustomerPaymentQR />} />
+        <Route
+          path="/customer/payment-qr/:orderId"
+          element={<CustomerPaymentQR orderId="" onScanned={() => {}} />}
+        />
         {/* Guest routes */}
         <Route path="/guest/menu" element={<GuestMenu />} />
         <Route path="/guest/order-tracking" element={<GuestOrderTracking />} />
-        <Route path="/guest/order-tracking/:orderId" element={<GuestOrderTracking />} />
+        <Route
+          path="/guest/order-tracking/:orderId"
+          element={<GuestOrderTracking />}
+        />
         <Route path="/guest/order-success/:orderId" element={<GuestOrderSuccess />} />
         <Route path="/qr-codes" element={<QRCodeGenerator />} />
         <Route path="/visit-mauricio" element={<VisitMauricio />} />

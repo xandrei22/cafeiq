@@ -11,7 +11,6 @@ import {
   ShoppingCart,
   Users
 } from 'lucide-react';
-import { io, Socket } from 'socket.io-client';
 import ProductDetailsForm from './ProductDetailsForm';
 
 interface MenuItem {
@@ -24,6 +23,7 @@ interface MenuItem {
   visible_in_pos: boolean;
   visible_in_customer_menu: boolean;
   created_at: string;
+  image_url?: string;
   ingredients?: Array<{
     ingredient_id: number;
     base_quantity: number;
@@ -40,37 +40,13 @@ const AdminMenu: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [loading, setLoading] = useState(true);
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  const API_URL = '';
 
   useEffect(() => {
-    // Initialize Socket.IO connection
-    const newSocket = io();
-    setSocket(newSocket);
-
-    // Join admin room for real-time updates
-    newSocket.emit('join-admin-room');
-
-    // Listen for real-time updates
-    newSocket.on('menu-updated', (data) => {
-      console.log('Menu updated in AdminMenu:', data);
-      loadMenuItems();
-    });
-
-    newSocket.on('inventory-updated', (data) => {
-      console.log('Inventory updated in AdminMenu:', data);
-      loadMenuItems();
-    });
-
     loadMenuItems();
-
-    return () => {
-      newSocket.close();
-    };
   }, []);
 
   const loadMenuItems = async () => {
@@ -279,17 +255,7 @@ const AdminMenu: React.FC = () => {
 
       {viewMode === 'grid' && (
       <>
-      {menuItems.length === 0 ? (
-        <Card className="text-center py-12">
-          <CardContent>
-            <div className="text-gray-500">
-              <ShoppingCart className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-medium mb-2">No menu items yet</h3>
-              <p className="text-sm">Create your first menu item to get started</p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : filteredItems.length === 0 ? (
+      {filteredItems.length === 0 ? (
         <Card className="text-center py-12">
           <CardContent>
             <div className="text-gray-500">
@@ -314,7 +280,7 @@ const AdminMenu: React.FC = () => {
                         className="w-full h-full object-cover"
                         loading="lazy"
                         onError={(e) => {
-                          console.error('Image failed to load:', item.image_url);
+                          console.error('Image failed to load:', (item as any).image_url);
                           e.currentTarget.style.display = 'none';
                           e.currentTarget.nextElementSibling?.classList.remove('hidden');
                         }}
@@ -397,17 +363,7 @@ const AdminMenu: React.FC = () => {
       )}
 
       {viewMode === 'list' && (
-        menuItems.length === 0 ? (
-          <Card className="text-center py-12">
-            <CardContent>
-              <div className="text-gray-500">
-                <ShoppingCart className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-medium mb-2">No menu items yet</h3>
-                <p className="text-sm">Create your first menu item to get started</p>
-              </div>
-            </CardContent>
-          </Card>
-        ) : filteredItems.length === 0 ? (
+        filteredItems.length === 0 ? (
           <Card className="text-center py-12">
             <CardContent>
               <div className="text-gray-500">
@@ -486,6 +442,17 @@ const AdminMenu: React.FC = () => {
         )
       )}
 
+      {menuItems.length === 0 && (
+        <Card className="text-center py-12">
+          <CardContent>
+            <div className="text-gray-500">
+              <ShoppingCart className="w-16 h-16 mx-auto mb-4 opacity-50" />
+              <h3 className="text-lg font-medium mb-2">No menu items yet</h3>
+              <p className="text-sm">Create your first menu item to get started</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {showForm && (
         <ProductDetailsForm
