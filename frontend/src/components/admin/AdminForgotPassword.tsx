@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import "../../styles/theme.css";
 import { Card, CardContent } from "../ui/card";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
@@ -36,12 +37,16 @@ const AdminForgotPassword: React.FC = () => {
   return (
     <div className="min-h-screen flex">
       {/* Left Side - Branding */}
-      <div className="flex-1 bg-[#6B5B5B] flex flex-col items-center justify-center text-white p-8">
+      <div className="flex-1 bg-[#a87437] flex flex-col items-center justify-center text-white p-8">
         <div className="max-w-md text-center space-y-6">
           <div className="mb-8">
-            <img src="/images/logo.png" alt="CaféIQ Logo" className="mx-auto h-20 w-auto" />
+            <img
+              src="/images/whiteicon_bg.png"
+              alt="CaféIQ Logo"
+              className="mx-auto h-56 w-auto"
+            />
           </div>
-          <h1 className="text-4xl font-light mb-4">CaféIQ Admin Portal</h1>
+          <h1 className="text-4xl font-bold mb-4">CaféIQ Admin Portal</h1>
           <p className="text-lg text-white/80 mb-8">
             Manage your cafe operations, track sales, and oversee daily activities at Mauricio's Cafe and Bakery
           </p>
@@ -53,7 +58,7 @@ const AdminForgotPassword: React.FC = () => {
           <CardContent className="p-0">
             <form className="space-y-6" onSubmit={handleSubmit}>
               <div className="text-center mb-8">
-                <h2 className="text-3xl font-light text-[#6B5B5B] mb-2">Forgot your password?</h2>
+                <h2 className="text-3xl font-light text-[#A87437] mb-2">Forgot your password?</h2>
                 <p className="text-sm text-gray-600">Enter your admin email to receive a password reset link.</p>
               </div>
               <div className="space-y-4">
@@ -65,7 +70,7 @@ const AdminForgotPassword: React.FC = () => {
                     id="email"
                     type="email"
                     placeholder="m@example.com"
-                    className="w-full px-4 py-3 bg-gray-100 border-0 rounded-none focus:bg-white focus:ring-1 focus:ring-[#6B5B5B] mt-1"
+                    className="w-full px-4 py-3 bg-gray-100 border-0 rounded-none focus:bg-white focus:ring-1 focus:ring-[#a87437] mt-1"
                     required
                     value={email}
                     onChange={e => setEmail(e.target.value)}
@@ -74,13 +79,13 @@ const AdminForgotPassword: React.FC = () => {
               </div>
               <Button
                 type="submit"
-                className="w-full bg-[#6B5B5B] hover:bg-[#5A4A4A] text-white py-3 rounded-full font-medium"
+                className="w-full bg-[#a87437] hover:bg-[#946a33] text-white py-3 rounded-3xl font-medium"
               >
                 Send Reset Link
               </Button>
             </form>
             <div className="text-center mt-2">
-              <a href="/admin" className="text-sm text-blue-600 hover:underline">Back to Login</a>
+              <a href="/admin" className="text-sm text-[#a87437] hover:underline">Back to Login</a>
             </div>
             {status !== "idle" && (
               <div className={`text-center text-sm ${status === "success" ? "text-green-600" : "text-red-600"}`}>{message}</div>

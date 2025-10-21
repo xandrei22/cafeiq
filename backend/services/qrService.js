@@ -1,9 +1,11 @@
 const QRCode = require('qrcode');
 const { v4: uuidv4 } = require('uuid');
+const { generateTableUrl } = require('../utils/idObfuscator');
 
 class QRService {
     constructor() {
         this.baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        this.signUrl = require('../utils/urlSigner').signUrl;
     }
 
     async generateTableQR(tableNumber) {
@@ -14,7 +16,9 @@ class QRService {
                 qrId: uuidv4()
             };
 
-            const tableUrl = `${this.baseUrl}/customer/menu?table=${tableNumber}&data=${encodeURIComponent(JSON.stringify(tableData))}`;
+            // Use obfuscated URL instead of raw table number
+            const obfuscatedUrl = generateTableUrl(tableNumber.toString(), this.baseUrl);
+            const tableUrl = this.signUrl(obfuscatedUrl, { expiresInSeconds: 24 * 60 * 60 }); // 24h
 
             const qrCodeDataURL = await QRCode.toDataURL(tableUrl, {
                 errorCorrectionLevel: 'M',
@@ -51,7 +55,8 @@ class QRService {
                 qrId: uuidv4()
             };
 
-            const paymentUrl = `${this.baseUrl}/payment?data=${encodeURIComponent(JSON.stringify(paymentData))}`;
+            const rawUrl = `${this.baseUrl}/payment?data=${encodeURIComponent(JSON.stringify(paymentData))}`;
+            const paymentUrl = this.signUrl(rawUrl, { expiresInSeconds: 15 * 60 }); // 15m
 
             const qrCodeDataURL = await QRCode.toDataURL(paymentUrl, {
                 errorCorrectionLevel: 'H',
@@ -80,9 +85,10 @@ class QRService {
 
     async generateOrderTrackingQR(orderId, tableNumber = null) {
         try {
-            const trackingUrl = tableNumber ?
+            const unsigned = tableNumber ?
                 `${this.baseUrl}/order-status/${orderId}?table=${tableNumber}` :
                 `${this.baseUrl}/order-status/${orderId}`;
+            const trackingUrl = this.signUrl(unsigned, { expiresInSeconds: 60 * 60 }); // 1h
 
             const qrCodeDataURL = await QRCode.toDataURL(trackingUrl, {
                 errorCorrectionLevel: 'M',
@@ -110,7 +116,8 @@ class QRService {
 
     async generateLoyaltyQR(customerId) {
         try {
-            const loyaltyUrl = `${this.baseUrl}/loyalty/${customerId}`;
+            const rawUrl = `${this.baseUrl}/loyalty/${customerId}`;
+            const loyaltyUrl = this.signUrl(rawUrl, { expiresInSeconds: 60 * 60 });
 
             const qrCodeDataURL = await QRCode.toDataURL(loyaltyUrl, {
                 errorCorrectionLevel: 'M',
@@ -137,7 +144,8 @@ class QRService {
 
     async generateEventBookingQR(eventId) {
         try {
-            const eventUrl = `${this.baseUrl}/event-booking/${eventId}`;
+            const rawUrl = `${this.baseUrl}/event-booking/${eventId}`;
+            const eventUrl = this.signUrl(rawUrl, { expiresInSeconds: 60 * 60 });
 
             const qrCodeDataURL = await QRCode.toDataURL(eventUrl, {
                 errorCorrectionLevel: 'M',
@@ -164,7 +172,8 @@ class QRService {
 
     async generateStaffLoginQR() {
         try {
-            const loginUrl = `${this.baseUrl}/staff/login`;
+            const rawUrl = `${this.baseUrl}/staff/login`;
+            const loginUrl = this.signUrl(rawUrl, { expiresInSeconds: 60 * 60 });
 
             const qrCodeDataURL = await QRCode.toDataURL(loginUrl, {
                 errorCorrectionLevel: 'M',

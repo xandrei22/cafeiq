@@ -52,13 +52,24 @@ export const AlertProvider: React.FC<AlertProviderProps> = ({ children }) => {
   const checkLowStockAlert = async () => {
     try {
       setIsCheckingAlerts(true);
-      const response = await fetch('/api/low-stock/alert-status');
+      
+      // Check if user is staff or admin by trying staff endpoint first
+      let response = await fetch('/api/staff/low-stock/alert-status', { credentials: 'include' });
+      
+      // If staff endpoint fails with 500 or other error, try admin endpoint
+      if (!response.ok && response.status !== 500) {
+        response = await fetch('/api/low-stock/alert-status', { credentials: 'include' });
+      }
+      
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.hasAlert) {
           setLowStockAlertData(data.alert);
           setShowLowStockAlert(true);
         }
+      } else if (response.status === 500) {
+        // If both endpoints fail with 500, skip the alert check silently
+        console.warn('Low stock alert service unavailable');
       }
     } catch (error) {
       console.error('Failed to check low stock alert:', error);

@@ -25,7 +25,7 @@ const PaymentSuccess: React.FC<PaymentSuccessProps> = () => {
 
   const fetchOrderDetails = async () => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/payment/status/${orderId}`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/payment/status/${orderId}`);
       const data = await response.json();
       
       if (data.success) {

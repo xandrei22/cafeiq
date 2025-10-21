@@ -5,7 +5,7 @@ const db = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
 
 // Generate simulated GCash QR Code for order
-router.post('/gcash/qr/:orderId', async (req, res) => {
+router.post('/gcash/qr/:orderId', async(req, res) => {
     try {
         const { orderId } = req.params;
         const { tableNumber } = req.body;
@@ -66,7 +66,7 @@ router.post('/gcash/qr/:orderId', async (req, res) => {
 });
 
 // Generate simulated PayMaya QR Code for order
-router.post('/paymaya/qr/:orderId', async (req, res) => {
+router.post('/paymaya/qr/:orderId', async(req, res) => {
     try {
         const { orderId } = req.params;
         const { tableNumber } = req.body;
@@ -127,7 +127,7 @@ router.post('/paymaya/qr/:orderId', async (req, res) => {
 });
 
 // Process cash payment (staff verification required)
-router.post('/cash/:orderId', async (req, res) => {
+router.post('/cash/:orderId', async(req, res) => {
     try {
         const { orderId } = req.params;
         const { amount, staffId, notes } = req.body;
@@ -187,7 +187,7 @@ router.post('/cash/:orderId', async (req, res) => {
 });
 
 // Simulate payment processing (for testing)
-router.post('/simulate/:orderId/:method', async (req, res) => {
+router.post('/simulate/:orderId/:method', async(req, res) => {
     try {
         const { orderId, method } = req.params;
         const { amount } = req.body;
@@ -250,7 +250,7 @@ router.post('/simulate/:orderId/:method', async (req, res) => {
 });
 
 // Get payment history for an order
-router.get('/history/:orderId', async (req, res) => {
+router.get('/history/:orderId', async(req, res) => {
     try {
         const { orderId } = req.params;
 
@@ -272,7 +272,7 @@ router.get('/history/:orderId', async (req, res) => {
 });
 
 // Get payment status
-router.get('/status/:orderId', async (req, res) => {
+router.get('/status/:orderId', async(req, res) => {
     try {
         const { orderId } = req.params;
 
@@ -310,19 +310,22 @@ router.get('/status/:orderId', async (req, res) => {
     }
 });
 
-// Generate payment status QR for customer tracking
-router.post('/status-qr/:orderId', async (req, res) => {
+// Generate payment status QR for customer tracking (signed URL)
+router.post('/status-qr/:orderId', async(req, res) => {
     try {
         const { orderId } = req.params;
         const { tableNumber } = req.body;
 
         const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-        const statusUrl = tableNumber ?
+        const unsignedUrl = new URL(tableNumber ?
             `${baseUrl}/payment-status/${orderId}?table=${tableNumber}&dev=true` :
-            `${baseUrl}/payment-status/${orderId}?dev=true`;
+            `${baseUrl}/payment-status/${orderId}?dev=true`);
+
+        const { signUrl } = require('../utils/urlSigner');
+        const signedUrl = signUrl(unsignedUrl.toString(), { expiresInSeconds: 900 });
 
         const QRCode = require('qrcode');
-        const qrCodeDataURL = await QRCode.toDataURL(statusUrl, {
+        const qrCodeDataURL = await QRCode.toDataURL(signedUrl, {
             errorCorrectionLevel: 'M',
             type: 'image/png',
             quality: 0.92,
@@ -336,7 +339,7 @@ router.post('/status-qr/:orderId', async (req, res) => {
         res.json({
             success: true,
             qrCode: qrCodeDataURL,
-            url: statusUrl,
+            url: signedUrl,
             orderId: orderId,
             devMode: true
         });

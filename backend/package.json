@@ -27,6 +27,7 @@
         "jspdf-autotable": "^5.0.2",
         "multer": "^2.0.2",
         "mysql2": "^3.14.1",
+        "node-cron": "^4.2.1",
         "nodemailer": "^7.0.3",
         "nodemon": "^3.1.10",
         "passport": "^0.7.0",
@@ -36,6 +37,7 @@
         "sharp": "^0.34.3",
         "socket.io": "^4.8.1",
         "uuid": "^10.0.0",
-        "write-excel-file": "^2.3.10"
+        "write-excel-file": "^2.3.10",
+        "xlsx": "^0.18.5"
     }
 }

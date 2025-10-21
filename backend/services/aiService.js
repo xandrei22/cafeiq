@@ -10,9 +10,31 @@ class AIService {
             return;
         }
         this.genAI = new GoogleGenerativeAI(apiKey);
-        // Use current stable text model
-        this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-        console.log('[AI] Gemini model initialized');
+        // Prefer a widely available model; fall back to legacy if needed
+        const preferredModels = [
+            process.env.GEMINI_MODEL, // allow override
+            'gemini-2.5-flash', // user's available model
+            'gemini-2.5-pro', // another 2.5 variant
+            'gemini-1.5-flash-8b',
+            'gemini-1.5-flash-latest',
+            'gemini-1.5-flash-001',
+            'gemini-pro' // legacy fallback
+        ].filter(Boolean);
+        let initialized = false;
+        for (const name of preferredModels) {
+            try {
+                this.model = this.genAI.getGenerativeModel({ model: name });
+                console.log(`[AI] Gemini model initialized: ${name}`);
+                initialized = true;
+                break;
+            } catch (e) {
+                console.warn(`[AI] Failed to init model ${name}:`, (e && e.message) ? e.message : e);
+            }
+        }
+        if (!initialized) {
+            console.warn('[AI] No Gemini model initialized; AI will use local fallback.');
+            this.model = null;
+        }
     }
 
     async getDrinkRecommendations(dietaryPreferences, customerHistory = [], currentMenu = []) {
@@ -77,7 +99,7 @@ class AIService {
                         customizations: ['Personalized options'],
                         explanation: text,
                         dietaryNotes: 'Consider your dietary preferences',
-                        estimatedPrice: '$4-6',
+                        estimatedPrice: '₱4-6',
                         preparationTime: '3-5 minutes'
                     }],
                     generalTips: 'Ask our baristas for more customization options'
@@ -92,7 +114,7 @@ class AIService {
                     customizations: ['Choose your milk preference'],
                     explanation: 'A classic choice that is highly customizable',
                     dietaryNotes: 'Can be made with alternative milks',
-                    estimatedPrice: '$4-5',
+                    estimatedPrice: '₱4-5',
                     preparationTime: '4 minutes'
                 }],
                 generalTips: 'Our baristas can help you customize any drink to your preferences'
@@ -155,14 +177,14 @@ class AIService {
                     suggestions: [{
                         name: 'Alternative Milk',
                         description: 'Choose almond, oat, or soy milk',
-                        price: '$0.75',
+                        price: '₱0.75',
                         dietaryNotes: 'Lactose-free options available'
                     }],
                     combinations: [{
                         name: 'Classic Sweet',
                         customizations: ['Vanilla Syrup', 'Whipped Cream'],
                         description: 'A sweet and creamy combination',
-                        totalPrice: '$1.25'
+                        totalPrice: '₱1.25'
                     }]
                 };
             }

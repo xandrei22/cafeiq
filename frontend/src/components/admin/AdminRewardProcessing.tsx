@@ -10,13 +10,6 @@ import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../ui/select';
-import {
   Table,
   TableBody,
   TableCell,
@@ -31,16 +24,12 @@ import {
   RefreshCw,
   Loader2,
   Calendar,
-  User,
-  Tag,
+  // Unused icons removed
   Clock,
-  DollarSign,
-  Info,
-  Receipt,
   ClipboardCheck,
   XCircle,
   CircleDotDashed,
-  CircleDot
+  // CircleDot
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 
@@ -53,26 +42,17 @@ interface ClaimedReward {
   reward_name: string;
   reward_type: string;
   description: string;
-  points_cost: number;
-  claimed_at: string;
+  points_cost?: number; // optional: some admin endpoints return points_required
+  points_required?: number;
+  redemption_date: string | null; // when created/claimed
   expires_at: string;
-  status: 'pending' | 'processed' | 'cancelled' | 'expired';
-  redemption_date: string | null;
+  status: 'pending' | 'completed' | 'processed' | 'cancelled' | 'expired';
   staff_id: number | null;
   redemption_proof: string | null;
   order_id: number | null;
 }
 
-interface LoyaltySettings {
-  points_per_peso: { setting_value: string };
-  minimum_points_redemption: { setting_value: string };
-  loyalty_enabled: { setting_value: string };
-  rewards_enabled: { setting_value: string };
-  double_points_days: { setting_value: string };
-  welcome_points: { setting_value: string };
-  welcome_points_enabled: { setting_value: string };
-  points_expiry_months: { setting_value: string };
-}
+// Removed unused LoyaltySettings interface
 
 interface LoyaltyStats {
   totalClaimed: number;
@@ -131,13 +111,7 @@ const CountdownTimer: React.FC<{ expiryDate: string }> = ({ expiryDate }) => {
   );
 };
 
-interface RewardProcessingProps {
-  mode?: 'admin' | 'staff';
-  titleClassName?: string;
-  containerClassName?: string;
-}
-
-const AdminRewardProcessing: React.FC<RewardProcessingProps> = ({ mode = 'admin', titleClassName = 'text-3xl sm:text-4xl', containerClassName = 'p-6 bg-white min-h-screen' }) => {
+const AdminRewardProcessing: React.FC = () => {
   const { user } = useAuth();
   const [claimedRewards, setClaimedRewards] = useState<ClaimedReward[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,8 +127,13 @@ const AdminRewardProcessing: React.FC<RewardProcessingProps> = ({ mode = 'admin'
     setError(null);
     try {
       const token = localStorage.getItem('token');
-      const endpoint = mode === 'staff' ? '/api/loyalty/staff/claimed-rewards' : '/api/loyalty/admin/claimed-rewards';
-      const response = await fetch(endpoint, {
+      // Prefer admin redemptions API (supports filtering and consistent fields)
+      const params = new URLSearchParams();
+      if (activeTab === 'pending') params.set('status', 'pending');
+      if (activeTab === 'processed' || activeTab === 'completed') params.set('status', 'completed');
+      if (activeTab === 'cancelled') params.set('status', 'cancelled');
+      if (activeTab === 'expired') params.set('status', 'expired');
+      const response = await fetch(`/api/admin/loyalty/redemptions?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -165,7 +144,26 @@ const AdminRewardProcessing: React.FC<RewardProcessingProps> = ({ mode = 'admin'
       }
       const data = await response.json();
       if (data.success) {
-        setClaimedRewards(data.claimedRewards);
+        // Normalize fields so the table renders regardless of source names
+        const normalized: ClaimedReward[] = (data.redemptions || []).map((r: any) => ({
+          id: r.id,
+          customer_id: r.customer_id,
+          customer_name: r.customer_name,
+          customer_email: r.customer_email,
+          reward_id: r.reward_id,
+          reward_name: r.reward_name,
+          reward_type: r.reward_type,
+          description: r.reward_description,
+          points_cost: r.points_required ?? r.points_cost,
+          points_required: r.points_required,
+          redemption_date: r.redemption_date ?? r.created_at ?? null,
+          expires_at: r.expires_at,
+          status: r.status,
+          staff_id: r.staff_id ?? null,
+          redemption_proof: r.redemption_proof ?? null,
+          order_id: r.order_id ?? null,
+        }));
+        setClaimedRewards(normalized);
       } else {
         setError(data.error || 'Failed to fetch claimed rewards');
       }
@@ -175,11 +173,29 @@ const AdminRewardProcessing: React.FC<RewardProcessingProps> = ({ mode = 'admin'
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeTab]);
 
   const fetchLoyaltyStats = useCallback(async () => {
-    // Stats endpoint not required here or not available; skipping to avoid 404
-    setStats(null);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/admin/loyalty/statistics', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      if (data.success) {
+        setStats(data.stats);
+      } else {
+        console.error('Failed to fetch loyalty stats:', data.error);
+      }
+    } catch (err) {
+      console.error('Error fetching loyalty stats:', err);
+    }
   }, []);
 
   useEffect(() => {
@@ -204,17 +220,16 @@ const AdminRewardProcessing: React.FC<RewardProcessingProps> = ({ mode = 'admin'
     setProcessingRewardId(rewardId);
     try {
       const token = localStorage.getItem('token');
-    const response = await fetch(`/api/loyalty/confirm-reward-usage`, {
-        method: 'POST',
+      const response = await fetch(`/api/admin/loyalty/redemptions/${rewardId}/status`, {
+        method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          redemptionId: rewardId,
-          staffId: staffId,
-          usageType: status === 'processed' ? 'claim' : 'cancel',
-          confirmationNotes: status === 'processed' ? (redemptionProof.trim() || 'Confirmed by staff') : 'Cancelled by staff'
+          adminId: user?.id,
+          status: status === 'processed' ? 'completed' : 'cancelled',
+          notes: status === 'processed' ? (redemptionProof.trim() || 'Processed by admin') : 'Cancelled by admin',
         }),
       });
 
@@ -242,7 +257,7 @@ const AdminRewardProcessing: React.FC<RewardProcessingProps> = ({ mode = 'admin'
     if (activeTab === 'pending') {
       return reward.status === 'pending' && expiry > now;
     } else if (activeTab === 'processed') {
-      return reward.status === 'processed';
+      return reward.status === 'completed' || reward.status === 'processed';
     } else if (activeTab === 'cancelled') {
       return reward.status === 'cancelled';
     } else if (activeTab === 'expired') {
@@ -273,8 +288,8 @@ const AdminRewardProcessing: React.FC<RewardProcessingProps> = ({ mode = 'admin'
   }
 
   return (
-    <div className={containerClassName}>
-      <h1 className={`${titleClassName} font-bold text-gray-900 mb-6`}>Reward Processing</h1>
+    <div className="p-6 bg-white min-h-screen">
+      <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6">Reward Processing</h1>
 
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -322,18 +337,12 @@ const AdminRewardProcessing: React.FC<RewardProcessingProps> = ({ mode = 'admin'
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        {(() => {
-          const tabsListClass = mode === 'staff' ? 'flex items-center justify-start gap-2' : 'grid w-full grid-cols-4';
-          const triggerClass = mode === 'staff' ? 'px-3 py-1 text-sm rounded-full data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border' : '';
-          return (
-            <TabsList className={tabsListClass}>
-              <TabsTrigger className={triggerClass} value="pending">Pending</TabsTrigger>
-              <TabsTrigger className={triggerClass} value="processed">Processed</TabsTrigger>
-              <TabsTrigger className={triggerClass} value="cancelled">Cancelled</TabsTrigger>
-              <TabsTrigger className={triggerClass} value="expired">Expired</TabsTrigger>
-            </TabsList>
-          );
-        })()}
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="pending">Pending</TabsTrigger>
+          <TabsTrigger value="processed">Processed</TabsTrigger>
+          <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
+          <TabsTrigger value="expired">Expired</TabsTrigger>
+        </TabsList>
         <TabsContent value="pending" className="mt-4">
           <h2 className="text-2xl font-semibold text-gray-700 mb-4">Pending Rewards</h2>
           {filteredRewards.length === 0 ? (
@@ -367,11 +376,11 @@ const AdminRewardProcessing: React.FC<RewardProcessingProps> = ({ mode = 'admin'
                       <TableCell>
                         <div className="flex items-center space-x-1 text-sm">
                           <Calendar className="w-4 h-4 text-gray-500" />
-                          <span>{new Date(reward.claimed_at).toLocaleDateString()}</span>
+                          <span>{reward.redemption_date ? new Date(reward.redemption_date).toLocaleDateString() : '—'}</span>
                         </div>
                         <div className="flex items-center space-x-1 text-sm text-gray-500">
                           <Clock className="w-4 h-4" />
-                          <span>{new Date(reward.claimed_at).toLocaleTimeString()}</span>
+                          <span>{reward.redemption_date ? new Date(reward.redemption_date).toLocaleTimeString() : ''}</span>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -458,11 +467,11 @@ const AdminRewardProcessing: React.FC<RewardProcessingProps> = ({ mode = 'admin'
                       <TableCell>
                         <div className="flex items-center space-x-1 text-sm">
                           <Calendar className="w-4 h-4 text-gray-500" />
-                          <span>{new Date(reward.claimed_at).toLocaleDateString()}</span>
+                          <span>{reward.redemption_date ? new Date(reward.redemption_date).toLocaleDateString() : '—'}</span>
                         </div>
                         <div className="flex items-center space-x-1 text-sm text-gray-500">
                           <Clock className="w-4 h-4" />
-                          <span>{new Date(reward.claimed_at).toLocaleTimeString()}</span>
+                          <span>{reward.redemption_date ? new Date(reward.redemption_date).toLocaleTimeString() : ''}</span>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -519,11 +528,11 @@ const AdminRewardProcessing: React.FC<RewardProcessingProps> = ({ mode = 'admin'
                       <TableCell>
                         <div className="flex items-center space-x-1 text-sm">
                           <Calendar className="w-4 h-4 text-gray-500" />
-                          <span>{new Date(reward.claimed_at).toLocaleDateString()}</span>
+                          <span>{reward.redemption_date ? new Date(reward.redemption_date).toLocaleDateString() : '—'}</span>
                         </div>
                         <div className="flex items-center space-x-1 text-sm text-gray-500">
                           <Clock className="w-4 h-4" />
-                          <span>{new Date(reward.claimed_at).toLocaleTimeString()}</span>
+                          <span>{reward.redemption_date ? new Date(reward.redemption_date).toLocaleTimeString() : ''}</span>
                         </div>
                       </TableCell>
                       <TableCell className="font-medium text-red-600">{reward.status.toUpperCase()}</TableCell>
@@ -565,11 +574,11 @@ const AdminRewardProcessing: React.FC<RewardProcessingProps> = ({ mode = 'admin'
                       <TableCell>
                         <div className="flex items-center space-x-1 text-sm">
                           <Calendar className="w-4 h-4 text-gray-500" />
-                          <span>{new Date(reward.claimed_at).toLocaleDateString()}</span>
+                          <span>{reward.redemption_date ? new Date(reward.redemption_date).toLocaleDateString() : '—'}</span>
                         </div>
                         <div className="flex items-center space-x-1 text-sm text-gray-500">
                           <Clock className="w-4 h-4" />
-                          <span>{new Date(reward.claimed_at).toLocaleTimeString()}</span>
+                          <span>{reward.redemption_date ? new Date(reward.redemption_date).toLocaleTimeString() : ''}</span>
                         </div>
                       </TableCell>
                       <TableCell className="font-medium text-red-600">

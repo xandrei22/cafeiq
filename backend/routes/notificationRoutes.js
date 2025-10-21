@@ -145,8 +145,9 @@ router.patch('/:id/read', ensureAuthenticated, async(req, res) => {
     try {
         const { id } = req.params;
         const userId = (req.session.adminUser && req.session.adminUser.id) || (req.session.staffUser && req.session.staffUser.id) || (req.session.customerUser && req.session.customerUser.id);
+        const userType = (req.session.adminUser && 'admin') || (req.session.staffUser && 'staff') || (req.session.customerUser && 'customer');
 
-        const result = await notificationService.markAsRead(id, userId);
+        const result = await notificationService.markAsRead(id, userId, userType);
 
         res.json({
             success: true,

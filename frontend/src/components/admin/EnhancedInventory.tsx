@@ -25,7 +25,9 @@ import {
   X,
   Box,
   Leaf,
-  History
+  History,
+  LayoutGrid,
+  List as ListIcon
 } from 'lucide-react';
 
 interface InventoryItem {
@@ -58,10 +60,13 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<InventoryItem[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [storageLocations, setStorageLocations] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedStorage, setSelectedStorage] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [activeTab, setActiveTab] = useState('inventory');
   const [transactionsCount, setTransactionsCount] = useState(0);
   const [transactionRows, setTransactionRows] = useState<Array<{
@@ -167,6 +172,12 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
           if (newCategories.length > 0) {
             setCategories(prev => [...new Set([...prev, ...newCategories])]);
           }
+
+          // collect storage locations
+          const uniqueStorages = Array.from(new Set((data.inventory as InventoryItem[])
+            .map(i => (i.storage_location || '').trim())
+            .filter(v => !!v)));
+          setStorageLocations(uniqueStorages);
         }
       } else {
         throw new Error(data.error || 'Failed to load inventory');
@@ -265,7 +276,9 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
     // Filter by search term
     if (searchTerm) {
       filtered = filtered.filter(item =>
-        item.name.toLowerCase().includes(searchTerm.toLowerCase())
+        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.category.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
@@ -274,13 +287,18 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
       filtered = filtered.filter(item => item.category === selectedCategory);
     }
 
+    // Filter by storage
+    if (selectedStorage !== 'all') {
+      filtered = filtered.filter(item => (item.storage_location || '') === selectedStorage);
+    }
+
     // Apply tab-specific filtering
     if (activeTab === 'lowStock') {
       filtered = filtered.filter(item => item.actual_quantity <= item.reorder_level);
     }
 
     setFilteredItems(filtered);
-  }, [searchTerm, selectedCategory, inventoryItems, activeTab]);
+  }, [searchTerm, selectedCategory, selectedStorage, inventoryItems, activeTab]);
 
   // Add item
   const handleAddItem = async (e: React.FormEvent) => {
@@ -577,43 +595,43 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="border-2 border-blue-200 shadow-xl hover:shadow-2xl transition-shadow duration-300">
+          <Card className="shadow-xl hover:shadow-2xl transition-shadow duration-300">
             <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <Box className="h-5 w-5 text-blue-600" />
-              <span className="text-sm font-medium text-gray-600">Total Ingredients</span>
+              <div className="flex items-center gap-3">
+                <Box className="h-6 w-6 text-gray-500" />
+                <span className="text-base sm:text-lg font-medium text-gray-700">Total Ingredients</span>
               </div>
-            <div className="text-2xl font-bold">{totalIngredients}</div>
+              <div className="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight">{totalIngredients}</div>
             </CardContent>
           </Card>
-          <Card className="border-2 border-green-200 shadow-xl hover:shadow-2xl transition-shadow duration-300">
+          <Card className="shadow-xl hover:shadow-2xl transition-shadow duration-300">
             <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <TrendingUp className="h-5 w-5 text-green-600" />
-              <span className="text-sm font-medium text-gray-600">In Stock</span>
+              <div className="flex items-center gap-3">
+                <TrendingUp className="h-6 w-6 text-gray-500" />
+                <span className="text-base sm:text-lg font-medium text-gray-700">In Stock</span>
               </div>
-            <div className="text-2xl font-bold">{inStock}</div>
+              <div className="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight">{inStock}</div>
             </CardContent>
           </Card>
-          <Card className="border-2 border-red-200 shadow-xl hover:shadow-2xl transition-shadow duration-300">
+          <Card className="shadow-xl hover:shadow-2xl transition-shadow duration-300">
             <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <AlertTriangle className="h-5 w-5 text-red-600" />
-              <span className="text-sm font-medium text-gray-600">Low Stock</span>
-                </div>
-            <div className="text-2xl font-bold">{lowStock}</div>
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-6 w-6 text-gray-500" />
+                <span className="text-base sm:text-lg font-medium text-gray-700">Low Stock</span>
+              </div>
+              <div className="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight">{lowStock}</div>
             </CardContent>
           </Card>
-          <Card className="border-2 border-purple-200 shadow-xl hover:shadow-2xl transition-shadow duration-300">
+          <Card className="shadow-xl hover:shadow-2xl transition-shadow duration-300">
             <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <History className="h-5 w-5 text-purple-600" />
-              <span className="text-sm font-medium text-gray-600">Transactions</span>
+              <div className="flex items-center gap-3">
+                <History className="h-6 w-6 text-gray-500" />
+                <span className="text-base sm:text-lg font-medium text-gray-700">Transactions</span>
               </div>
-            <div className="text-2xl font-bold">{transactionsCount}</div>
-                        </CardContent>
-                      </Card>
-                  </div>
+              <div className="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight">{transactionsCount}</div>
+            </CardContent>
+          </Card>
+      </div>
 
       {/* Navigation Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-2">
@@ -624,22 +642,73 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
         </TabsList>
       </Tabs>
 
-      {/* Category Filter */}
-      <div className="flex items-center space-x-4">
-        <div className="w-48">
-          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                    <SelectTrigger>
+      {/* Filters, Search, View toggle */}
+      <div className="rounded-xl bg-[#f5f5f5] p-4">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {/* Search */}
+          <div className="relative w-full sm:w-auto sm:min-w-[18rem]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Input
+              placeholder="Search by name, SKU, category"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 bg-white"
+            />
+          </div>
+
+          {/* Category Filter */}
+          <div className="w-full sm:w-auto">
+            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+              <SelectTrigger>
                 <SelectValue placeholder="All Categories" />
-                    </SelectTrigger>
-                    <SelectContent>
+              </SelectTrigger>
+              <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
                 {categories.map((category) => (
                   <SelectItem key={category} value={category}>
                     {category}
                   </SelectItem>
                 ))}
-                    </SelectContent>
-                  </Select>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Storage Filter */}
+          <div className="w-full sm:w-auto">
+            <Select value={selectedStorage} onValueChange={setSelectedStorage}>
+              <SelectTrigger>
+                <SelectValue placeholder="All Storage" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Storage</SelectItem>
+                {storageLocations.map((s) => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* View Toggle */}
+          <div className="w-full sm:w-auto flex sm:justify-end">
+            <div className="inline-flex rounded-md overflow-hidden border bg-white">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`px-3 py-2 flex items-center gap-2 ${viewMode === 'grid' ? 'bg-gray-100' : ''}`}
+                aria-label="Grid view"
+              >
+                <LayoutGrid className="w-4 h-4" /> Grid
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`px-3 py-2 flex items-center gap-2 border-l ${viewMode === 'list' ? 'bg-gray-100' : ''}`}
+                aria-label="List view"
+              >
+                <ListIcon className="w-4 h-4" /> List
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -686,6 +755,53 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
               </div>
             </div>
           )}
+        </div>
+      ) : (
+      viewMode === 'list' ? (
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="min-w-full text-sm table-fixed">
+            <thead>
+              <tr className="bg-gray-50 border-b">
+                <th className="text-left p-3 w-44">Name</th>
+                <th className="text-left p-3 w-32">Category</th>
+                <th className="text-left p-3 w-32">SKU</th>
+                <th className="text-left p-3 w-28">Storage</th>
+                <th className="text-left p-3 w-28">Stock</th>
+                <th className="text-left p-3 w-24">Reorder</th>
+                <th className="text-left p-3 w-24">Status</th>
+                <th className="text-left p-3 w-20">Days</th>
+                <th className="text-left p-3 w-20">Cost</th>
+                <th className="text-left p-3 w-20">Extra</th>
+                <th className="text-center p-3 w-20">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredItems.map((item) => (
+                <tr key={item.id} className="border-b hover:bg-gray-50">
+                  <td className="p-3 font-medium truncate">{item.name}</td>
+                  <td className="p-3 truncate">{item.category}</td>
+                  <td className="p-3 truncate">{item.sku}</td>
+                  <td className="p-3 truncate">{item.storage_location}</td>
+                  <td className="p-3 truncate">{item.actual_quantity} {item.actual_unit}</td>
+                  <td className="p-3 truncate">{item.reorder_level} {item.actual_unit}</td>
+                  <td className="p-3">{getStockStatusBadge(item)}</td>
+                  <td className="p-3 truncate">{item.days_of_stock} days</td>
+                  <td className="p-3 truncate">₱{item.cost_per_unit}</td>
+                  <td className="p-3 truncate">{item.extra_price_per_unit != null ? `₱${Number(item.extra_price_per_unit).toFixed(2)}` : '—'}</td>
+                  <td className="p-3 text-center">
+                    <div className="flex justify-center gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => openEditModal(item)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleDeleteItem(item.id)}>
+                        <Trash className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -788,6 +904,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
           </Card>
         ))}
       </div>
+      )
       )}
 
       {/* Add New Ingredient Modal */}
@@ -800,25 +917,26 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <form onSubmit={handleAddItem} className="p-6 space-y-6">
+            <form onSubmit={handleAddItem} className="p-6 space-y-8">
               {/* Ingredient Details */}
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <h3 className="font-medium text-gray-900">Ingredient Details</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
                     <Label htmlFor="name">Ingredient Name *</Label>
                     <Input
                       id="name"
                       value={addForm.name}
                       onChange={(e) => setAddForm(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="e.g., Whole Milk"
                       required
                     />
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="category">Category *</Label>
                     <Select value={addForm.category} onValueChange={(value) => setAddForm(prev => ({ ...prev, category: value }))}>
               <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
+                        <SelectValue placeholder="Select category (e.g., Dairy, Syrups)" />
               </SelectTrigger>
               <SelectContent>
                         {categories.map((category) => (
@@ -830,21 +948,22 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
             </Select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
                     <Label htmlFor="sku">SKU (Stock Keeping Unit) *</Label>
                     <Input
                       id="sku"
                       value={addForm.sku}
                       onChange={(e) => setAddForm(prev => ({ ...prev, sku: e.target.value }))}
+                      placeholder="e.g., MILK-1L-FRESH"
                       required
                     />
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="actual_unit">Actual Unit *</Label>
                     <Select value={addForm.actual_unit} onValueChange={(value) => setAddForm(prev => ({ ...prev, actual_unit: value }))}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select unit" />
+                        <SelectValue placeholder="Select unit (e.g., ml, g, pcs)" />
                       </SelectTrigger>
                       <SelectContent>
                         {predefinedUnits.map((unit) => (
@@ -857,7 +976,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                     <p className="text-xs text-gray-500 mt-1">Internal storage unit</p>
                   </div>
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="description">Description</Label>
                   <Textarea
                     id="description"
@@ -869,7 +988,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
               </div>
 
               {/* Stock Management */}
-              <div className="bg-green-50 p-4 rounded-lg space-y-4">
+              <div className="bg-green-50 p-5 rounded-lg space-y-5">
                 <div className="flex items-center space-x-2">
                   <Leaf className="h-4 w-4 text-green-600" />
                   <h3 className="font-medium text-gray-900">Stock Management</h3>
@@ -877,8 +996,8 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                 <p className="text-sm text-gray-600">
                   Configure how much inventory to start with and when to reorder. You can type directly into these fields.
                 </p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
                     <Label htmlFor="initial_quantity">Initial Quantity</Label>
                     <div className="flex items-center space-x-2">
                       <Button
@@ -899,6 +1018,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                         onChange={(e) => setAddForm(prev => ({ ...prev, initial_quantity: e.target.value }))}
                         required
                         className="text-center"
+                        placeholder="Starting amount (in unit)"
                       />
                       <Button
                         type="button"
@@ -914,7 +1034,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                     </div>
                     <p className="text-xs text-gray-500 mt-1">Starting amount in {addForm.actual_unit || 'unit'}</p>
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="reorder_level">Reorder Level</Label>
                     <div className="flex items-center space-x-2">
                       <Button
@@ -935,6 +1055,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                         onChange={(e) => setAddForm(prev => ({ ...prev, reorder_level: e.target.value }))}
                         required
                         className="text-center"
+                        placeholder="Reorder when stock drops to this level"
                       />
                       <Button
                         type="button"
@@ -951,8 +1072,8 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                     <p className="text-xs text-gray-500 mt-1">Reorder when stock drops to this level</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
                     <Label htmlFor="days_of_stock">Days of Stock</Label>
                     <div className="flex items-center space-x-2">
                       <Button
@@ -973,6 +1094,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                         onChange={(e) => setAddForm(prev => ({ ...prev, days_of_stock: e.target.value }))}
                         required
                         className="text-center"
+                        placeholder="Estimated days current stock will last"
                       />
                       <Button
                         type="button"
@@ -988,7 +1110,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                     </div>
                     <p className="text-xs text-gray-500 mt-1">Estimated days current stock will last</p>
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="cost_per_unit">Cost per Unit (₱)</Label>
                     <div className="flex items-center space-x-2">
                       <Button
@@ -1010,6 +1132,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                         onChange={(e) => setAddForm(prev => ({ ...prev, cost_per_unit: e.target.value }))}
                         required
                         className="text-center"
+                        placeholder="Cost per unit in pesos"
                       />
                 <Button
                         type="button"
@@ -1029,7 +1152,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
               </div>
 
               {/* Storage Location */}
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="storage_location">Storage Location</Label>
                 <Input
                   id="storage_location"
@@ -1040,7 +1163,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex justify-end space-x-3 pt-4 border-t">
+              <div className="flex justify-end gap-3 pt-6 border-t">
                 <Button type="button" variant="outline" onClick={() => setShowAddModal(false)}>
                   Cancel
                 </Button>
@@ -1063,12 +1186,12 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <form onSubmit={handleEditItem} className="p-6 space-y-6">
+            <form onSubmit={handleEditItem} className="p-6 space-y-8">
               {/* Ingredient Details */}
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <h3 className="font-medium text-gray-900">Ingredient Details</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
                     <Label htmlFor="edit_name">Ingredient Name *</Label>
                     <Input
                       id="edit_name"
@@ -1077,7 +1200,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                       required
                     />
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="edit_category">Category *</Label>
                     <Select value={editForm.category} onValueChange={(value) => setEditForm(prev => ({ ...prev, category: value }))}>
                       <SelectTrigger>
@@ -1093,8 +1216,8 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                     </Select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
                     <Label htmlFor="edit_sku">SKU (Stock Keeping Unit) *</Label>
                     <Input
                       id="edit_sku"
@@ -1103,7 +1226,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                       required
                     />
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="edit_actual_unit">Actual Unit *</Label>
                     <Select value={editForm.actual_unit} onValueChange={(value) => setEditForm(prev => ({ ...prev, actual_unit: value }))}>
                       <SelectTrigger>
@@ -1120,7 +1243,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                     <p className="text-xs text-gray-500 mt-1">Internal storage unit</p>
                   </div>
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="edit_description">Description</Label>
                   <Textarea
                     id="edit_description"
@@ -1140,8 +1263,8 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                         <p className="text-sm text-gray-600">
                   Configure how much inventory to start with and when to reorder. You can type directly into these fields.
                 </p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
                     <Label htmlFor="edit_actual_quantity">Current Quantity</Label>
                     <div className="flex items-center space-x-2">
                       <Button
@@ -1177,7 +1300,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                     </div>
                     <p className="text-xs text-gray-500 mt-1">Current amount in {editForm.actual_unit || 'unit'}</p>
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="edit_reorder_level">Reorder Level</Label>
                     <div className="flex items-center space-x-2">
                       <Button
@@ -1214,8 +1337,8 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                     <p className="text-xs text-gray-500 mt-1">Reorder when stock drops to this level</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
                     <Label htmlFor="edit_days_of_stock">Days of Stock</Label>
                     <div className="flex items-center space-x-2">
                       <Button
@@ -1251,7 +1374,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                     </div>
                     <p className="text-xs text-gray-500 mt-1">Estimated days current stock will last</p>
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="edit_cost_per_unit">Cost per Unit (₱)</Label>
                     <div className="flex items-center space-x-2">
                       <Button
@@ -1288,7 +1411,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
                     </div>
                     <p className="text-xs text-gray-500 mt-1">Cost per {editForm.actual_unit || 'unit'} in pesos</p>
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="edit_extra_price_per_unit">Extra price per unit (₱)</Label>
                     <div className="flex items-center space-x-2">
                       <Input
@@ -1306,7 +1429,7 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
               </div>
 
               {/* Storage Location */}
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="edit_storage_location">Storage Location</Label>
                 <Input
                   id="edit_storage_location"
@@ -1333,33 +1456,34 @@ const EnhancedInventory: React.FC<EnhancedInventoryProps> = () => {
       {/* Bulk Import Modal */}
       {showBulkModal && (
         <div className="fixed inset-0 backdrop-blur-sm bg-black/20 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="bg-white rounded-2xl shadow-2xl border border-white/20 p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">Bulk Import</h2>
-              <Button variant="outline" size="sm" onClick={() => setShowBulkModal(false)}>
+              <h2 className="text-xl font-bold text-[#3f3532]">Bulk Import</h2>
+              <Button variant="outline" size="sm" onClick={() => setShowBulkModal(false)} className="border-[#a87437]/30 text-[#a87437] hover:bg-[#a87437]/10">
                 <X className="h-4 w-4" />
               </Button>
             </div>
             <form onSubmit={handleBulkImport} className="space-y-4">
               <div>
-                <Label htmlFor="csvFile">CSV File</Label>
+                <Label htmlFor="csvFile" className="text-[#3f3532]">CSV File</Label>
                 <Input
                   id="csvFile"
                   name="csvFile"
                   type="file"
                   accept=".csv"
                   required
+                  className="border-[#a87437]/30 focus:ring-[#a87437] focus:border-[#a87437]"
                 />
                 <p className="text-sm text-gray-500 mt-1">
                   Upload a CSV file with columns: name, category, sku, description, actual_unit, actual_quantity, reorder_level, days_of_stock, cost_per_actual_unit, storage_location
                 </p>
               </div>
               <div className="flex gap-2 pt-4">
-                <Button type="submit" className="flex-1">
+                <Button type="submit" className="flex-1 bg-[#a87437] hover:bg-[#906735] text-white">
                   <Upload className="h-4 w-4 mr-2" />
                   Import
                 </Button>
-                <Button type="button" variant="outline" onClick={() => setShowBulkModal(false)} className="flex-1">
+                <Button type="button" variant="outline" onClick={() => setShowBulkModal(false)} className="flex-1 border-[#a87437]/30 text-[#a87437] hover:bg-[#a87437]/10">
                   Cancel
                 </Button>
               </div>

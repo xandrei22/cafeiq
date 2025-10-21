@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Sparkles, Coffee, Star, Zap } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
 import LayeredCupVisualization from './LayeredCupVisualization';
-import CustomizationQuantitySelector from './CustomizationQuantitySelector';
+import LayerBasedCustomization from './LayerBasedCustomization';
 
 interface CustomizationOption {
   id: string;
@@ -64,11 +64,15 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
   const [loadingAI, setLoadingAI] = useState(false);
 
   const sizePrices = { Regular: 0, Large: 30 };
-  const basePrice = item.price;
+  const basePrice = parseFloat(item.base_price || item.price || 0) || 0;
+  
+  // Debug logging for item object
+  console.log('UnifiedCustomizeModal item object:', item);
+  console.log('Base price resolved to:', basePrice);
+  console.log('Raw base_price:', item.base_price, 'Raw price:', item.price);
 
-  // API base (normalize: strip trailing /api if present to avoid /api/api/*)
-  const RAW_API = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
-  const API_BASE = typeof RAW_API === 'string' ? RAW_API.replace(/\/?api\/?$/i, '') : 'http://localhost:5001';
+  // API base - use relative path since Vite proxy handles the backend
+  const API_BASE = '';
 
   // Dynamic options sourced from inventory
   const [milkOptions, setMilkOptions] = useState<string[]>([]);
@@ -77,6 +81,66 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
 
   // Helper to slugify ids from names
   const toId = (label: string) => label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+
+  // Calculate dynamic sugar level based on actual ingredients
+  const calculateSugarLevel = () => {
+    let totalSugarLevel = 0;
+    let ingredientCount = 0;
+
+    // Check main sweetener selection
+    if (sweetener && sweetener !== 'No Sweetener') {
+      // Different sweeteners have different base sugar levels
+      const sweetenerLevels: { [key: string]: number } = {
+        'Sugar': 100,
+        'Honey': 80,
+        'Stevia': 20,
+        'Agave': 70,
+        'Maple Syrup': 75,
+        'Brown Sugar': 90,
+        'Coconut Sugar': 85,
+        'Monk Fruit': 15,
+        'Erythritol': 10,
+        'Xylitol': 25
+      };
+      totalSugarLevel += sweetenerLevels[sweetener] || 50;
+      ingredientCount++;
+    }
+
+    // Check customization ingredients for sweeteners
+    Object.entries(customizations).forEach(([id, config]) => {
+      if (config.selected && config.quantity > 0) {
+        const option = customizationOptions.find(opt => opt.id === id);
+        if (option) {
+          const label = option.label.toLowerCase();
+          if (label.includes('syrup') || label.includes('sweetener') || label.includes('sugar') || 
+              label.includes('honey') || label.includes('stevia') || label.includes('agave')) {
+            // Sweetener ingredients contribute to sugar level
+            const sweetnessMultiplier = config.quantity;
+            const baseSweetness = 30; // Base sweetness per unit
+            totalSugarLevel += baseSweetness * sweetnessMultiplier;
+            ingredientCount++;
+          }
+        }
+      }
+    });
+
+    // If no sweeteners, return 0
+    if (ingredientCount === 0) return 0;
+
+    // Average the sugar level and cap at 100
+    return Math.min(100, Math.round(totalSugarLevel / ingredientCount));
+  };
+
+  // Calculate current sugar level
+  const currentSugarLevel = calculateSugarLevel();
+
+  // Update sugar level when ingredients change (but allow manual override)
+  useEffect(() => {
+    // Only auto-update if no manual adjustment has been made recently
+    if (currentSugarLevel > 0) {
+      setSugarLevel(currentSugarLevel);
+    }
+  }, [sweetener, customizations]);
 
   // Fetch available ingredients from inventory
   useEffect(() => {
@@ -149,18 +213,26 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
             console.log('Processed sweeteners:', sweeteners);
             console.log('Processed customizations:', customizations);
             
-            setMilkOptions(['No Milk', ...milkTypes]);
-            setSweetenerOptions(['No Sweetener', ...sweeteners]);
-            setCustomizationOptions(customizations);
+            if (Array.isArray(ingredients) && ingredients.length > 0 && customizations.length > 0) {
+              setMilkOptions(['No Milk', ...milkTypes]);
+              setSweetenerOptions(['No Sweetener', ...sweeteners]);
+              setCustomizationOptions(customizations);
+            } else {
+              // Fallback: fetch item-specific allowed ingredients
+              await fetchItemAllowedIngredients();
+            }
           } else {
-            setFallbackOptions();
+            // Fallback: fetch item-specific allowed ingredients
+            await fetchItemAllowedIngredients();
           }
         } else {
-          setFallbackOptions();
+          // Fallback: fetch item-specific allowed ingredients
+          await fetchItemAllowedIngredients();
         }
       } catch (error) {
         console.error('Error fetching ingredients:', error);
-        setFallbackOptions();
+        // Fallback: fetch item-specific allowed ingredients
+        await fetchItemAllowedIngredients();
       }
     };
 
@@ -168,6 +240,51 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
       setMilkOptions(['No Milk']);
       setSweetenerOptions(['No Sweetener']);
       setCustomizationOptions([]);
+    };
+
+    const fetchItemAllowedIngredients = async () => {
+      try {
+        if (!item?.id) return setFallbackOptions();
+        const res = await fetch(`${API_BASE}/api/menu/items/${item.id}/ingredients`, { credentials: 'include' });
+        if (!res.ok) return setFallbackOptions();
+        const data = await res.json();
+        if (!data?.success || !Array.isArray(data.ingredients)) return setFallbackOptions();
+
+        const ingredients: any[] = data.ingredients as any[];
+        const milkTypes = ingredients
+          .filter((ing: any) => ((ing.category || '').toLowerCase().includes('milk')) || (ing.name || '').toLowerCase().includes('milk') || (ing.name || '').toLowerCase().includes('cream'))
+          .map((ing: any) => ing.name || ing.ingredient_name || 'Milk');
+
+        const sweeteners = ingredients
+          .filter((ing: any) => ((ing.category || '').toLowerCase().includes('sweetener')) || (ing.name || '').toLowerCase().includes('sugar') || (ing.name || '').toLowerCase().includes('syrup') || (ing.name || '').toLowerCase().includes('honey'))
+          .map((ing: any) => ing.name || ing.ingredient_name || 'Sweetener');
+
+        const customizations = ingredients.map((ing: any, idx: number) => {
+          const rawLabel = ing.name || ing.ingredient_name || '';
+          const label = (typeof rawLabel === 'string' && rawLabel.trim().length > 0) ? rawLabel.trim() : `Add-on ${idx + 1}`;
+          const unit = ing.actual_unit || ing.display_unit || 'serving';
+          const price = (typeof ing.extra_price_per_unit === 'number' && !isNaN(ing.extra_price_per_unit))
+            ? Number(ing.extra_price_per_unit)
+            : (Number(ing.price_per_unit) || Number(ing.cost_per_actual_unit) || 0);
+          return {
+            id: toId(label),
+            label,
+            unit,
+            pricePerUnit: price,
+            defaultQuantity: 1,
+            maxQuantity: 5,
+            category: ing.category || 'Extra',
+            ingredientId: ing.id || ing.ingredient_id
+          } as CustomizationOption;
+        });
+
+        setMilkOptions(['No Milk', ...milkTypes]);
+        setSweetenerOptions(['No Sweetener', ...sweeteners]);
+        setCustomizationOptions(customizations);
+      } catch (e) {
+        console.error('Error fetching item-allowed ingredients:', e);
+        setFallbackOptions();
+      }
     };
 
     fetchIngredients();
@@ -293,16 +410,27 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
   const calculateTotalPrice = () => {
     let total = basePrice + (sizePrices[size as keyof typeof sizePrices] || 0);
     
+    // Debug logging
+    console.log('Price calculation:', {
+      basePrice,
+      size,
+      sizePrice: sizePrices[size as keyof typeof sizePrices],
+      total
+    });
+    
     // Add customization costs
     Object.entries(customizations).forEach(([id, config]) => {
       if (config.selected && config.quantity > 0) {
         const option = customizationOptions.find(opt => opt.id === id);
         if (option) {
-          total += option.pricePerUnit * config.quantity;
+          const addonCost = option.pricePerUnit * config.quantity;
+          total += addonCost;
+          console.log(`Adding ${option.label}: ${option.pricePerUnit} x ${config.quantity} = ${addonCost}`);
         }
       }
     });
     
+    console.log('Final total:', total);
     return total;
   };
 
@@ -341,24 +469,109 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
     onClose();
   };
 
-  const applyAISuggestion = (_suggestion: AISuggestion) => {
-    // Apply AI suggestion logic here
-    // This would parse the suggestion and apply relevant customizations
+  // Try to resolve which options a suggestion refers to based on label keywords
+  const resolveSuggestionTargets = (suggestion: AISuggestion) => {
+    const tokens = `${suggestion.name} ${suggestion.description}`.toLowerCase().split(/[^a-z0-9]+/g).filter(Boolean);
+    const matchedOptionIds: string[] = [];
+
+    customizationOptions.forEach((opt) => {
+      const label = (opt.label || '').toLowerCase();
+      if (label && tokens.some((t) => label.includes(t))) {
+        matchedOptionIds.push(opt.id);
+      }
+    });
+
+    // Also try milk/sweetener mapping by keyword
+    let matchedMilk: string | undefined;
+    if (milkOptions && milkOptions.length > 0) {
+      const foundMilk = milkOptions.find((m) => tokens.some((t) => m.toLowerCase().includes(t)));
+      if (foundMilk && foundMilk !== 'No Milk') matchedMilk = foundMilk;
+    }
+
+    let matchedSweetener: string | undefined;
+    if (sweetenerOptions && sweetenerOptions.length > 0) {
+      const foundSweet = sweetenerOptions.find((s) => tokens.some((t) => s.toLowerCase().includes(t)));
+      if (foundSweet && foundSweet !== 'No Sweetener') matchedSweetener = foundSweet;
+    }
+
+    return { matchedOptionIds, matchedMilk, matchedSweetener };
+  };
+
+  const applyAISuggestion = (suggestion: AISuggestion) => {
+    const { matchedOptionIds, matchedMilk, matchedSweetener } = resolveSuggestionTargets(suggestion);
+
+    if (matchedMilk) setMilk(matchedMilk);
+    if (matchedSweetener) setSweetener(matchedSweetener);
+
+    if (matchedOptionIds.length > 0) {
+      setCustomizations((prev) => {
+        const next = { ...prev } as { [key: string]: { selected: boolean; quantity: number } };
+        matchedOptionIds.forEach((id) => {
+          const defaultQty = customizationOptions.find((o) => o.id === id)?.defaultQuantity || 1;
+          next[id] = { selected: true, quantity: Math.max(defaultQty, 1) };
+        });
+        return next;
+      });
+    }
+
     setShowAISuggestions(false);
   };
 
   const applyAICombination = (combination: AICombination) => {
-    // Apply AI combination logic here
-    const newCustomizations = { ...customizations };
-    combination.customizations.forEach(customization => {
-      const option = customizationOptions.find(opt => opt.label === customization);
+    const newCustomizations = { ...customizations } as { [key: string]: { selected: boolean; quantity: number } };
+    combination.customizations.forEach((customization) => {
+      const option = customizationOptions.find((opt) => (opt.label || '').toLowerCase() === customization.toLowerCase());
       if (option) {
-        newCustomizations[option.id] = { selected: true, quantity: 1 };
+        const defaultQty = option.defaultQuantity || 1;
+        newCustomizations[option.id] = { selected: true, quantity: Math.max(defaultQty, 1) };
       }
     });
     setCustomizations(newCustomizations);
     setShowAISuggestions(false);
   };
+
+  // Filter AI outputs based on available ingredients (customizationOptions)
+  const availableLabelSet = useMemo(() => new Set(customizationOptions.map((o) => (o.label || '').toLowerCase())), [customizationOptions]);
+
+  const filteredAISuggestions = useMemo(() => {
+    // Keep only suggestions that can map to at least one available option or milk/sweetener
+    return aiSuggestions.filter((sugg) => {
+      const { matchedOptionIds, matchedMilk, matchedSweetener } = resolveSuggestionTargets(sugg);
+      return matchedOptionIds.length > 0 || Boolean(matchedMilk) || Boolean(matchedSweetener);
+    });
+  }, [aiSuggestions, customizationOptions, milkOptions, sweetenerOptions]);
+
+  const filteredAICombinations = useMemo(() => {
+    // Prune each combo to only available ingredients; keep combos that still have at least 1 item
+    return aiCombinations
+      .map((combo) => {
+        const kept = (combo.customizations || []).filter((c) => availableLabelSet.has((c || '').toLowerCase()));
+        return { ...combo, customizations: kept } as AICombination;
+      })
+      .filter((combo) => Array.isArray(combo.customizations) && combo.customizations.length > 0);
+  }, [aiCombinations, availableLabelSet]);
+
+  // If AI returns nothing usable, synthesize simple local suggestions from available options
+  const localFallbackSuggestions = useMemo(() => {
+    if (filteredAISuggestions.length > 0 || filteredAICombinations.length > 0) return { suggs: [], combos: [] };
+    if (customizationOptions.length === 0) return { suggs: [], combos: [] };
+
+    const labels = customizationOptions.map((o) => o.label || '').filter(Boolean);
+    const pick = (kw: string) => labels.find((l) => l.toLowerCase().includes(kw));
+
+    const suggs: AISuggestion[] = [];
+    const almond = pick('almond');
+    if (almond) suggs.push({ name: `${almond}`, description: `Add ${almond} for a smooth twist`, price: '+₱' + (customizationOptions.find(o=>o.label===almond)?.pricePerUnit ?? 0), dietaryNotes: 'Based on available stock' });
+    const honey = pick('honey');
+    if (honey) suggs.push({ name: `${honey}`, description: `Natural sweetness from ${honey}`, price: '+₱' + (customizationOptions.find(o=>o.label===honey)?.pricePerUnit ?? 0), dietaryNotes: 'Based on available stock' });
+    const cinnamon = pick('cinnamon');
+    if (cinnamon) suggs.push({ name: `${cinnamon}`, description: `Warm spice from ${cinnamon}`, price: '+₱' + (customizationOptions.find(o=>o.label===cinnamon)?.pricePerUnit ?? 0), dietaryNotes: 'Based on available stock' });
+
+    const combos: AICombination[] = [];
+    if (almond && honey) combos.push({ name: 'Nutty Honey', customizations: [almond, honey], description: 'Balanced and creamy', totalPrice: '+₱' + ((customizationOptions.find(o=>o.label===almond)?.pricePerUnit ?? 0) + (customizationOptions.find(o=>o.label===honey)?.pricePerUnit ?? 0)), rating: 4.6 });
+
+    return { suggs, combos };
+  }, [filteredAISuggestions, filteredAICombinations, customizationOptions]);
 
   return (
     <div className="fixed inset-0 backdrop-blur-sm bg-white/30 flex items-center justify-center z-50 p-4">
@@ -384,39 +597,6 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
         </div>
 
         <div className="p-6 space-y-6">
-          {/* AI-Powered Suggestions */}
-          <Card className="bg-blue-50 border-blue-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Sparkles className="w-5 h-5 text-blue-600" />
-                  <div>
-                    <h3 className="font-semibold text-blue-800">AI-Powered Suggestions</h3>
-                    <p className="text-sm text-blue-600">Get personalized ingredient recommendations</p>
-                  </div>
-                </div>
-                <Button
-                  onClick={() => {
-                    if (!showAISuggestions) {
-                      // Show suggestions and fetch if not already loaded
-                      setShowAISuggestions(true);
-                      if (aiSuggestions.length === 0) {
-                        fetchAISuggestions();
-                      }
-                    } else {
-                      // Hide suggestions
-                      setShowAISuggestions(false);
-                    }
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="border-blue-300 text-blue-700 hover:bg-blue-100"
-                >
-                  {showAISuggestions ? 'Hide Suggestions' : 'Show Suggestions'}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Left Column - Customization Options */}
@@ -499,72 +679,60 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
               </div>
 
               {/* Sugar Level */}
-              {sweetener && sweetener !== 'No Sweetener' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
-                    Sugar Level: {sugarLevel}%
-                  </label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="25"
-                    value={sugarLevel}
-                    onChange={(e) => setSugarLevel(Number(e.target.value))}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
-                    title="Adjust sugar level"
-                    aria-label="Sugar level slider"
-                  />
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>0%</span>
-                    <span>25%</span>
-                    <span>50%</span>
-                    <span>75%</span>
-                    <span>100%</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Add-ons & Extras */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Add-ons & Extras</h3>
-                <p className="text-sm text-gray-600 mb-4">Choose your quantities</p>
-                <div className="space-y-3">
-                  {customizationOptions.map((option) => (
-                    <div key={option.id} className="w-full">
-                      {/* Ensure a visible text label even if selector fails to render it */}
-                      <div className="text-xs text-gray-600 mb-1">{option.label || option.id || 'Add-on'}</div>
-                      <CustomizationQuantitySelector
-                        label={option.label || option.id}
-                        unit={option.unit}
-                        defaultQuantity={option.defaultQuantity}
-                        maxQuantity={option.maxQuantity}
-                        pricePerUnit={option.pricePerUnit}
-                        selected={customizations[option.id]?.selected || false}
-                        onToggle={(selected) =>
-                          setCustomizations((prev) => ({
-                            ...prev,
-                            [option.id]: {
-                              selected,
-                              quantity: selected
-                                ? (prev[option.id]?.quantity || option.defaultQuantity)
-                                : 0,
-                            },
-                          }))
-                        }
-                        onChange={(quantity) =>
-                          setCustomizations((prev) => ({
-                            ...prev,
-                            [option.id]: {
-                              selected: quantity > 0,
-                              quantity,
-                            },
-                          }))
-                        }
-                      />
-                    </div>
-                  ))}
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Sugar Level: {sugarLevel}%
+                  {currentSugarLevel > 0 && sugarLevel !== currentSugarLevel && (
+                    <span className="text-xs text-blue-600 ml-2">
+                      (Manual override)
+                    </span>
+                  )}
+                  {currentSugarLevel > 0 && sugarLevel === currentSugarLevel && (
+                    <span className="text-xs text-gray-500 ml-2">
+                      (Based on ingredients)
+                    </span>
+                  )}
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="25"
+                  value={sugarLevel}
+                  onChange={(e) => setSugarLevel(Number(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                  title="Adjust sugar level to control drink sweetness"
+                  aria-label="Sugar level slider"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>0%</span>
+                  <span>25%</span>
+                  <span>50%</span>
+                  <span>75%</span>
+                  <span>100%</span>
                 </div>
+                {currentSugarLevel > 0 && (
+                  <div className="text-xs text-amber-600 mt-2">
+                    💡 Move the slider to adjust sweetness - it will update the drink layers in real-time
+                  </div>
+                )}
+              </div>
+
+              {/* Layer-Based Customization */}
+              <div>
+                <LayerBasedCustomization
+                  options={customizationOptions}
+                  customizations={customizations}
+                  onCustomizationChange={(id, selected, quantity) =>
+                    setCustomizations((prev) => ({
+                      ...prev,
+                      [id]: {
+                        selected,
+                        quantity: selected ? quantity : 0,
+                      },
+                    }))
+                  }
+                />
               </div>
 
               {/* Special Instructions */}
@@ -581,23 +749,50 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
 
             {/* Right Column - Drink Preview and Order Summary */}
             <div className="space-y-6">
-              {/* Your Drink */}
-              <Card className="bg-gray-50 border-gray-200">
+              {/* Your Drink Layers */}
+              <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200">
                 <CardContent className="p-6">
-                  <h3 className="font-bold mb-4 text-center">Your Drink</h3>
-                  <LayeredCupVisualization
-                    customizations={{
-                      base: item.name,
-                      milk: milk,
-                      syrup: sweetener,
-                      toppings: Object.entries(customizations)
+                  <div className="text-center mb-4">
+                    <h3 className="text-xl font-bold text-gray-900 mb-2">Your Drink Layers</h3>
+                    <p className="text-sm text-gray-600">See how your customizations build up</p>
+                  </div>
+                  <div className="flex justify-center">
+                    <LayeredCupVisualization
+                      customizations={{
+                        base: item.name,
+                        milk: milk,
+                        syrup: sweetener,
+                        toppings: Object.entries(customizations)
+                          .filter(([_, config]) => config.selected && config.quantity > 0)
+                          .map(([id, _]) => customizationOptions.find(opt => opt.id === id)?.label || id),
+                        ice: temperature === 'Iced',
+                        size: size === 'Large' ? 'large' : 'medium',
+                        sugarLevel: sugarLevel
+                      } as any}
+                      className="w-full h-80"
+                    />
+                  </div>
+                  
+                  {/* Layer Legend */}
+                  <div className="mt-4 space-y-2">
+                    <h4 className="font-semibold text-gray-800 text-sm">Current Layers:</h4>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="outline" className="text-xs">Base: {item.name}</Badge>
+                      {milk && milk !== 'no milk' && <Badge variant="outline" className="text-xs">Milk: {milk}</Badge>}
+                      {sweetener && sweetener !== 'no sweetener' && <Badge variant="outline" className="text-xs">Sweetener: {sweetener}</Badge>}
+                      {temperature === 'Iced' && <Badge variant="outline" className="text-xs">Ice</Badge>}
+                      {Object.entries(customizations)
                         .filter(([_, config]) => config.selected && config.quantity > 0)
-                        .map(([id, _]) => customizationOptions.find(opt => opt.id === id)?.label || id),
-                      ice: temperature === 'Iced',
-                      size: size === 'Large' ? 'large' : 'medium'
-                    }}
-                    className="w-full h-64"
-                  />
+                        .map(([id, config]) => {
+                          const option = customizationOptions.find(opt => opt.id === id);
+                          return (
+                            <Badge key={id} variant="outline" className="text-xs">
+                              {option?.label}: {config.quantity}
+                            </Badge>
+                          );
+                        })}
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -608,7 +803,10 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
                   <div className="space-y-2">
                     <div className="flex justify-between">
                       <span>{item.name} ({size})</span>
-                      <span>₱{(basePrice + (sizePrices[size as keyof typeof sizePrices] || 0)).toFixed(2)}</span>
+                      <span>₱{(() => {
+                        const price = basePrice + (sizePrices[size as keyof typeof sizePrices] || 0);
+                        return isNaN(price) ? '0.00' : price.toFixed(2);
+                      })()}</span>
                     </div>
                     
                     {Object.entries(customizations).map(([id, config]) => {
@@ -628,20 +826,55 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
                     
                     <div className="border-t pt-2 flex justify-between font-bold">
                       <span>Total</span>
-                      <span>₱{calculateTotalPrice().toFixed(2)}</span>
+                      <span>₱{(() => {
+                        const total = calculateTotalPrice();
+                        return isNaN(total) ? '0.00' : total.toFixed(2);
+                      })()}</span>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
+              {/* AI Suggestions Teaser (below Order Summary) */}
+              {!showAISuggestions && (
+                <Card className="bg-blue-50 border-blue-200">
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-blue-800 flex items-center gap-2">
+                        <Sparkles className="w-4 h-4" />
+                        AI-Powered Suggestions
+                      </h3>
+                      <p className="text-sm text-blue-700">Get personalized ingredient recommendations</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="text-blue-700 border-blue-300 hover:bg-blue-100"
+                      onClick={() => setShowAISuggestions(true)}
+                    >
+                      Show Suggestions
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* AI Suggestions Panel */}
               {showAISuggestions && (
                 <Card className="bg-blue-50 border-blue-200">
                   <CardContent className="p-4">
-                    <h3 className="font-semibold text-blue-800 mb-4 flex items-center gap-2">
-                      <Sparkles className="w-4 h-4" />
-                      AI Recommendations
-                    </h3>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold text-blue-800 flex items-center gap-2">
+                        <Sparkles className="w-4 h-4" />
+                        AI Recommendations
+                      </h3>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowAISuggestions(false)}
+                        className="text-blue-700 border-blue-300 hover:bg-blue-100"
+                      >
+                        Hide Suggestions
+                      </Button>
+                    </div>
                     
                     {loadingAI ? (
                       <div className="text-center py-4">
@@ -651,14 +884,14 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
                     ) : (
                       <div className="space-y-4">
                         {/* AI Suggestions */}
-                        {aiSuggestions.length > 0 && (
+                        {(filteredAISuggestions.length > 0 || localFallbackSuggestions.suggs.length > 0) && (
                           <div>
                             <h4 className="font-semibold text-blue-800 mb-3 flex items-center gap-2">
                               <Star className="w-4 h-4" />
                               Recommended Combinations
                             </h4>
                             <div className="space-y-2">
-                              {aiSuggestions.map((suggestion, index) => (
+                              {(filteredAISuggestions.length > 0 ? filteredAISuggestions : localFallbackSuggestions.suggs).map((suggestion, index) => (
                                 <div key={index} className="bg-white p-3 rounded-lg border border-blue-200">
                                   <div className="flex items-center justify-between">
                                     <div>
@@ -684,14 +917,14 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
                         )}
 
                         {/* AI Combinations */}
-                        {aiCombinations.length > 0 && (
+                        {(filteredAICombinations.length > 0 || localFallbackSuggestions.combos.length > 0) && (
                           <div>
                             <h4 className="font-semibold text-blue-800 mb-3 flex items-center gap-2">
                               <Zap className="w-4 h-4" />
                               Popular Combinations
                             </h4>
                             <div className="space-y-2">
-                              {aiCombinations.map((combination, index) => (
+                              {(filteredAICombinations.length > 0 ? filteredAICombinations : localFallbackSuggestions.combos).map((combination, index) => (
                                 <div key={index} className="bg-white p-3 rounded-lg border border-blue-200">
                                   <div className="flex items-center justify-between">
                                     <div>
@@ -722,7 +955,7 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
                           </div>
                         )}
 
-                        {aiSuggestions.length === 0 && aiCombinations.length === 0 && !loadingAI && (
+                        {filteredAISuggestions.length === 0 && filteredAICombinations.length === 0 && localFallbackSuggestions.suggs.length === 0 && localFallbackSuggestions.combos.length === 0 && !loadingAI && (
                           <div className="text-center py-4 text-gray-500">
                             <Sparkles className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                             <p className="text-sm">No AI suggestions available right now.</p>
@@ -743,7 +976,10 @@ const UnifiedCustomizeModal: React.FC<UnifiedCustomizeModalProps> = ({
               Cancel
             </Button>
             <Button onClick={handleAdd} className="bg-[#a87437] hover:bg-[#8f652f]">
-              Add to Cart - ₱{calculateTotalPrice().toFixed(2)}
+              Add to Cart - ₱{(() => {
+                const total = calculateTotalPrice();
+                return isNaN(total) ? '0.00' : total.toFixed(2);
+              })()}
             </Button>
           </div>
         </div>

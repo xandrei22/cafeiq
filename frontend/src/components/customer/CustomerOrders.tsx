@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from "./AuthContext";
 import { useNavigate } from "react-router-dom";
 import { io, Socket } from 'socket.io-client';
-import { CheckCircle, Clock, Coffee, Utensils, Bell, Calendar, X } from 'lucide-react';
+import { CheckCircle, Clock, Coffee, Utensils, Bell, Calendar, X, Star, MessageSquare } from 'lucide-react';
 import './progress-bar.css';
 import ProgressBar from '../ui/ProgressBar';
 
@@ -42,6 +42,19 @@ const CustomerOrders: React.FC = () => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showOrderDetailsModal, setShowOrderDetailsModal] = useState(false);
   const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<Order | null>(null);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [selectedOrderForFeedback, setSelectedOrderForFeedback] = useState<Order | null>(null);
+  const [feedbackRating, setFeedbackRating] = useState(5);
+  const [feedbackComment, setFeedbackComment] = useState('');
+  const [feedbackCategory, setFeedbackCategory] = useState('General');
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [ordersWithFeedback, setOrdersWithFeedback] = useState<Set<string>>(new Set());
+
+  // Handle custom order placed event
+  const handleOrderPlaced = (event: CustomEvent) => {
+    console.log('🛒 Order placed event received:', event.detail);
+    fetchOrders(); // Refresh orders data
+  };
 
   useEffect(() => {
     console.log('🔍 CustomerOrders useEffect triggered:');
@@ -58,12 +71,19 @@ const CustomerOrders: React.FC = () => {
       
       // Initialize Socket.IO connection for real-time updates
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-      const newSocket = io(API_URL);
+      const newSocket = io(API_URL, {
+        transports: ['websocket', 'polling'],
+        withCredentials: true,
+        timeout: 30000,
+        forceNew: true,
+        autoConnect: true
+      });
       setSocket(newSocket);
 
       // Join customer room for real-time updates
       console.log('🔌 Joining customer room with email:', user.email);
-      newSocket.emit('join-customer-room', { customerEmail: user.email });
+      const joinRoom = () => newSocket.emit('join-customer-room', { customerEmail: user.email });
+      joinRoom();
 
       // Listen for real-time updates - automatic refresh
       newSocket.on('order-updated', (updateData) => {
@@ -93,11 +113,17 @@ const CustomerOrders: React.FC = () => {
         console.log('🔌 WebSocket event received:', eventName, args);
       });
 
+      // Listen for custom order placed event (from checkout)
+      window.addEventListener('orderPlaced', handleOrderPlaced as EventListener);
+
       // Add connection status logging
       newSocket.on('connect', () => {
         console.log('🔌 Customer WebSocket connected');
-        console.log('🔌 Socket ID:', newSocket.id);
-        console.log('🔌 Customer email for room:', user.email);
+        joinRoom();
+      });
+      newSocket.io.on('reconnect', () => {
+        console.log('🔄 Customer WebSocket reconnected');
+        joinRoom();
       });
 
       newSocket.on('disconnect', () => {
@@ -113,28 +139,8 @@ const CustomerOrders: React.FC = () => {
         console.log('✅ Customer room test event received:', data);
       });
 
+      // Initial fetch
       fetchOrders();
-
-      // Set up periodic refresh as fallback (every 10 seconds)
-      const refreshInterval = setInterval(() => {
-        console.log('🔄 Periodic refresh triggered');
-        fetchOrders();
-      }, 10000);
-
-      // Store interval for cleanup
-      (newSocket as any).refreshInterval = refreshInterval;
-
-      // Refresh when page becomes visible again
-      const handleVisibilityChange = () => {
-        if (!document.hidden) {
-          console.log('👁️ Page became visible, refreshing orders');
-          fetchOrders();
-        }
-      };
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      
-      // Store handler for cleanup
-      (newSocket as any).visibilityHandler = handleVisibilityChange;
     } else if (loading) {
       console.log('⏳ Still loading authentication...');
     } else {
@@ -143,18 +149,13 @@ const CustomerOrders: React.FC = () => {
 
     return () => {
       if (socket) {
-        // Clear the refresh interval
-        if ((socket as any).refreshInterval) {
-          clearInterval((socket as any).refreshInterval);
-        }
-        // Remove visibility change listener
-        if ((socket as any).visibilityHandler) {
-          document.removeEventListener('visibilitychange', (socket as any).visibilityHandler);
-        }
+        try { socket.removeAllListeners && socket.removeAllListeners(); } catch {}
         socket.close();
       }
+      // Clean up custom event listener
+      window.removeEventListener('orderPlaced', handleOrderPlaced as EventListener);
     };
-  }, [loading, authenticated, user, navigate]);
+  }, [loading, authenticated, user]);
 
   // Watch for order changes and update selected order automatically
   useEffect(() => {
@@ -267,11 +268,19 @@ const CustomerOrders: React.FC = () => {
           
           // Only update selectedOrder when it actually changes
           const currentOrders = sortedOrders.filter((order: Order) => {
-            const isActive = isActiveStatus(order.status);
+            // Never treat cancelled orders as active/current
+            if (order.status === 'cancelled') return false;
+            
+            const isActive = isActiveStatus(order.status, (order as any).payment_status);
             const isRecent = isRecentOrder(order.order_time);
             
             // Always show pending/pending_verification orders regardless of age
-            if (order.status === 'pending' || order.status === 'pending_verification') {
+            if (
+              order.status === 'pending' ||
+              order.status === 'pending_verification' ||
+              (order as any).payment_status === 'pending' ||
+              (order as any).payment_status === 'pending_verification'
+            ) {
               console.log(`✅ Order ${order.order_id} included (pending/pending_verification):`, order.status);
               return true;
             }
@@ -317,19 +326,42 @@ const CustomerOrders: React.FC = () => {
     }
   };
 
-  const getProgressPercentage = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 100;
-      case 'ready':
-        return 80;
-      case 'preparing':
-        return 50;
-      case 'pending':
-        return 20;
-      default:
-        return 0;
+  // Real-time progress that animates between phases based on elapsed time since order_time
+  const [nowTs, setNowTs] = useState<number>(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const getRealtimeProgress = (order: Order | null | undefined) => {
+    if (!order) return 0;
+    const placedAt = new Date(order.order_time).getTime();
+    const elapsedSec = Math.max(0, Math.floor((nowTs - placedAt) / 1000));
+
+    // Phase windows (seconds). Tweak to match actual kitchen cadence if needed.
+    const pendingWindow = 60 * 2;       // 0-2 minutes → 0%→20%
+    const preparingWindow = 60 * 12;    // next 12 minutes → 20%→80%
+        // const readyWindow = 60 * 5; // Removed unused variable         // next 5 minutes → 80%→100%
+
+    const status = String(order.status || 'pending');
+
+    if (status === 'completed') return 100;
+    if (status === 'ready') {
+      // When order is ready, show 90% progress (not 100% until completed)
+      return 90;
     }
+    if (status === 'preparing' || status === 'processing' || status === 'confirmed') {
+      const prepElapsed = Math.max(0, elapsedSec - pendingWindow);
+      const pct = 20 + Math.min(1, prepElapsed / preparingWindow) * 60;
+      return Math.round(pct);
+    }
+    if (status === 'pending' || status === 'pending_verification') {
+      const pct = Math.min(1, elapsedSec / pendingWindow) * 20;
+      return Math.round(pct);
+    }
+    if (status === 'cancelled') return 0;
+    return 0;
   };
 
   // Pagination logic for completed orders
@@ -369,16 +401,29 @@ const CustomerOrders: React.FC = () => {
   };
 
   // Helper functions for order filtering
-  const isActiveStatus = (s?: string) => {
+  const isActiveStatus = (s?: string, payment?: string) => {
     const status = s?.toString().toLowerCase();
-    return (
+    const pay = payment?.toString().toLowerCase();
+    
+    console.log('🔍 isActiveStatus called with:', { status, pay });
+    
+    // Consider payment pending/verification as active states even if order.status is unset
+    if (pay === 'pending' || pay === 'pending_verification') {
+      console.log('✅ isActiveStatus: true (payment pending/verification)');
+      return true;
+    }
+    
+    const isActive = (
       status === 'pending' ||
       status === 'pending_verification' ||
       status === 'confirmed' ||
       status === 'preparing' ||
-      status === 'ready' ||
-      status === 'processing'
+      status === 'processing' ||
+      status === 'ready'
     );
+    
+    console.log('🔍 isActiveStatus result:', isActive);
+    return isActive;
   };
 
   const isRecentOrder = (time?: string) => {
@@ -390,19 +435,51 @@ const CustomerOrders: React.FC = () => {
 
   // Separate current orders from completed orders
   const getCurrentOrders = () => {
+    console.log('🔍 getCurrentOrders - All orders:', orders.map(o => ({ id: o.order_id, status: o.status, payment_status: o.payment_status })));
+    
     // Show all active orders, but prioritize recent ones
-    return orders.filter(order => {
-      const isActive = isActiveStatus(order.status);
+    const activeOrders = orders.filter(order => {
+      // Never treat cancelled orders as active/current
+      if (order.status === 'cancelled') {
+        console.log(`❌ Order ${order.order_id} excluded: cancelled`);
+        return false;
+      }
+      
+      const isActive = isActiveStatus(order.status, (order as any).payment_status);
       const isRecent = isRecentOrder(order.order_time);
       
+      console.log(`🔍 Order ${order.order_id} filtering:`, {
+        status: order.status,
+        payment_status: order.payment_status,
+        isActive,
+        isRecent,
+        order_time: order.order_time
+      });
+      
       // Always show pending/pending_verification orders regardless of age
-      if (order.status === 'pending' || order.status === 'pending_verification') {
+      if (
+        order.status === 'pending' ||
+        order.status === 'pending_verification' ||
+        (order as any).payment_status === 'pending' ||
+        (order as any).payment_status === 'pending_verification'
+      ) {
+        console.log(`✅ Order ${order.order_id} included: pending/pending_verification`);
         return true;
       }
       
       // For other active statuses, only show if recent
-      return isActive && isRecent;
+      const shouldShow = isActive && isRecent;
+      console.log(`🔍 Order ${order.order_id} final decision:`, shouldShow ? 'INCLUDED' : 'EXCLUDED');
+      return shouldShow;
     });
+
+    console.log('🔍 getCurrentOrders - Active orders found:', activeOrders.length);
+    
+    // Add queue position to active orders
+    return activeOrders.map((order, index) => ({
+      ...order,
+      queue_position: index + 1
+    }));
   };
 
   const getCompletedOrders = () => {
@@ -413,7 +490,9 @@ const CustomerOrders: React.FC = () => {
 
   const getCurrentOrder = () => {
     const currentOrders = getCurrentOrders();
-    return currentOrders.length > 0 ? currentOrders[0] : null;
+    const result = currentOrders.length > 0 ? currentOrders[0] : null;
+    console.log('🔍 getCurrentOrder result:', result ? { id: result.order_id, status: result.status } : 'null');
+    return result;
   };
 
   const formatOrderTime = (timeString: string) => {
@@ -427,6 +506,108 @@ const CustomerOrders: React.FC = () => {
     const numPrice = typeof price === 'string' ? parseFloat(price) : price;
     return isNaN(numPrice) ? '0.00' : numPrice.toFixed(2);
   };
+
+  const handleFeedbackClick = (order: Order) => {
+    setSelectedOrderForFeedback(order);
+    setShowFeedbackModal(true);
+  };
+
+  const checkOrderFeedback = async (orderId: string) => {
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      const response = await fetch(`${API_URL}/api/feedback/check-order?order_id=${encodeURIComponent(orderId)}&customer_email=${encodeURIComponent(user?.email || '')}`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data.hasFeedback || false;
+      } else {
+        // Silently fail - assume no feedback exists
+        return false;
+      }
+    } catch (error) {
+      // Silently fail - assume no feedback exists
+      return false;
+    }
+  };
+
+  const handleSubmitFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !selectedOrderForFeedback) return;
+
+    setSubmittingFeedback(true);
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      const response = await fetch(`${API_URL}/api/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          customer_name: user.name || user.email,
+          rating: feedbackRating,
+          comment: feedbackComment,
+          category: feedbackCategory,
+          customer_email: user.email,
+          order_id: selectedOrderForFeedback.order_id
+        }),
+      });
+
+      if (response.ok) {
+        // Mark this order as having feedback
+        setOrdersWithFeedback(prev => new Set([...prev, selectedOrderForFeedback.order_id]));
+        setShowFeedbackModal(false);
+        setFeedbackRating(5);
+        setFeedbackComment('');
+        setFeedbackCategory('General');
+        setSelectedOrderForFeedback(null);
+      } else {
+        const error = await response.json();
+        console.error('Feedback submission error:', error);
+        alert('Failed to submit feedback. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error submitting feedback:', error);
+      alert('Failed to submit feedback. Please try again.');
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  };
+
+  // Load existing feedback status for completed orders
+  useEffect(() => {
+    const loadFeedbackStatus = async () => {
+      if (!user?.email) return;
+      
+      const completedOrders = orders.filter(order => order.status === 'completed');
+      
+      // Check feedback status for each completed order
+      try {
+        const feedbackPromises = completedOrders.map(order => 
+          checkOrderFeedback(order.order_id).then(hasFeedback => ({
+            orderId: order.order_id,
+            hasFeedback
+          }))
+        );
+        
+        const results = await Promise.all(feedbackPromises);
+        const ordersWithFeedbackSet = new Set(
+          results.filter(result => result.hasFeedback).map(result => result.orderId)
+        );
+        setOrdersWithFeedback(ordersWithFeedbackSet);
+        console.log('📝 Loaded feedback status:', ordersWithFeedbackSet);
+      } catch (error) {
+        console.warn('Could not load feedback status:', error);
+        setOrdersWithFeedback(new Set());
+      }
+    };
+    
+    if (orders.length > 0) {
+      loadFeedbackStatus();
+    }
+  }, [orders, user?.email]);
 
   if (loading || loadingOrders) {
     return (
@@ -480,7 +661,7 @@ const CustomerOrders: React.FC = () => {
              <div className="space-y-4">
                <h2 className="text-2xl font-bold text-gray-900">Current Order Status</h2>
                
-              {selectedOrder ? (
+              {getCurrentOrder() ? (
                  <div className="bg-white rounded-2xl shadow-xl overflow-hidden border-2 border-gray-200 hover:shadow-2xl transition-shadow duration-300">
                    {/* Order Status Header */}
                    <div className="p-6 bg-amber-50">
@@ -491,26 +672,27 @@ const CustomerOrders: React.FC = () => {
                          </div>
                          <div className="ml-4">
                            <h3 className="text-xl font-bold text-gray-900">
-                             {selectedOrder.status === 'completed' ? 'Order Completed' :
-                              selectedOrder.status === 'ready' ? 'Ready for Pickup' :
-                              selectedOrder.status === 'preparing' ? 'Preparing Your Order' :
+                             {getCurrentOrder()?.status === 'completed' ? 'Order Completed' :
+                              getCurrentOrder()?.status === 'ready' ? 'Ready for Pickup' :
+                              getCurrentOrder()?.status === 'preparing' ? 'Preparing Your Order' :
                               'Order Confirmed'}
                            </h3>
                            <p className="text-sm text-gray-600">
-                             {selectedOrder.status === 'completed' ? 'Your delicious order is ready!' :
-                              selectedOrder.status === 'ready' ? 'Your order is ready for pickup!' :
-                              selectedOrder.status === 'preparing' ? 'Your delicious order is being carefully prepared.' :
+                             {getCurrentOrder()?.status === 'completed' ? 'Your delicious order is ready!' :
+                              getCurrentOrder()?.status === 'ready' ? 'Your order is ready for pickup!' :
+                              getCurrentOrder()?.status === 'preparing' ? 'Your delicious order is being carefully prepared.' :
                               'We have received your order and will start preparing it soon.'}
                            </p>
                          </div>
                        </div>
                        <div className={`px-3 py-1 rounded-full text-sm font-medium ${
                          (() => {
-                           const status = selectedOrder.status?.toString().toLowerCase();
-                           console.log('CustomerOrders status badge - raw status:', selectedOrder.status, 'normalized:', status);
+                           const currentOrder = getCurrentOrder();
+                           const status = currentOrder?.status?.toString().toLowerCase();
+                           console.log('CustomerOrders status badge - raw status:', currentOrder?.status, 'normalized:', status);
                            
                           // Handle null/undefined status - default to VERIFYING color
-                          if (!selectedOrder.status) {
+                          if (!currentOrder?.status) {
                              return 'bg-amber-100 text-amber-800';
                            }
                            
@@ -527,14 +709,15 @@ const CustomerOrders: React.FC = () => {
                          })()
                        }`}>
                          {(() => {
-                           const rawStatus = selectedOrder.status;
+                           const currentOrder = getCurrentOrder();
+                           const rawStatus = currentOrder?.status;
                            const status = rawStatus?.toString().toLowerCase();
                            console.log('🔍 CustomerOrders status badge - raw status:', rawStatus, 'type:', typeof rawStatus, 'normalized:', status);
                            
                            // Handle null/undefined status - default to VERIFYING
                            if (!rawStatus) {
                              console.error('❌ CustomerOrders - Invalid status detected:', rawStatus);
-                             console.error('❌ CustomerOrders - Full selectedOrder:', selectedOrder);
+                             console.error('❌ CustomerOrders - Full currentOrder:', currentOrder);
                              return 'VERIFYING'; // Default to VERIFYING instead of ERROR
                            }
                            
@@ -557,39 +740,47 @@ const CustomerOrders: React.FC = () => {
                      <div className="grid grid-cols-2 gap-6 mb-6">
                        <div>
                          <p className="text-sm text-gray-600 mb-1">Order ID</p>
-                         <p className="font-medium text-gray-900">{selectedOrder.order_id}</p>
+                         <p className="font-medium text-gray-900">{getCurrentOrder()?.order_id}</p>
+                       </div>
+                       <div>
+                         <p className="text-sm text-gray-600 mb-1">Queue Position</p>
+                         <p className="font-medium text-gray-900">
+                           <span className="bg-[#a87437] text-white px-3 py-1 rounded-full text-sm font-bold">
+                             #{getCurrentOrder()?.queue_position || 'N/A'}
+                           </span>
+                         </p>
                        </div>
                        <div>
                          <p className="text-sm text-gray-600 mb-1">Service Options</p>
-                         <p className="font-medium text-gray-900 capitalize">{selectedOrder.order_type.replace('_', '-')}</p>
+                         <p className="font-medium text-gray-900 capitalize">{getCurrentOrder()?.order_type?.replace('_', '-')}</p>
                        </div>
-                       {selectedOrder.order_type === 'dine_in' && (
+                       {getCurrentOrder()?.order_type === 'dine_in' && (
                          <div>
                            <p className="text-sm text-gray-600 mb-1">Table Number</p>
-                           <p className="font-medium text-gray-900">{selectedOrder.table_number || 'Not specified'}</p>
+                           <p className="font-medium text-gray-900">{getCurrentOrder()?.table_number || 'Not specified'}</p>
                          </div>
                        )}
                        <div>
                          <p className="text-sm text-gray-600 mb-1">Order Time</p>
-                         <p className="font-medium text-gray-900">{new Date(selectedOrder.order_time).toLocaleString('en-US', {
+                         <p className="font-medium text-gray-900">{getCurrentOrder()?.order_time ? new Date(getCurrentOrder()!.order_time).toLocaleString('en-US', {
                            month: 'long',
                            day: 'numeric',
                            year: 'numeric',
                            hour: '2-digit',
                            minute: '2-digit'
-                         })}</p>
+                         }) : 'N/A'}</p>
                        </div>
                      </div>
 
                      {/* Progress Bar */}
                      <div className="mb-4">
                        <div className="w-full bg-gray-200 rounded-full h-2">
-                         <ProgressBar 
-                           value={getProgressPercentage(selectedOrder.status)}
-                           variant="amber"
-                         />
+                       <ProgressBar 
+                         value={getRealtimeProgress(getCurrentOrder())}
+                         variant="amber"
+                       />
                        </div>
-                       <p className="text-sm text-gray-600 mt-1">{getProgressPercentage(selectedOrder.status)}% Complete</p>
+                       <p className="text-sm text-gray-600 mt-1">{getRealtimeProgress(getCurrentOrder())}% Complete</p>
                      </div>
                    </div>
 
@@ -599,21 +790,21 @@ const CustomerOrders: React.FC = () => {
                      <div className="space-y-4">
                        <div className="flex items-center">
                          <div className={`p-2 rounded-full ${
-                           selectedOrder.status === 'completed' || selectedOrder.status === 'ready' || 
-                           selectedOrder.status === 'preparing' || selectedOrder.status === 'pending' || selectedOrder.status === 'pending_verification' 
+                           getCurrentOrder()?.status === 'completed' || getCurrentOrder()?.status === 'ready' || 
+                           getCurrentOrder()?.status === 'preparing' || getCurrentOrder()?.status === 'pending' || getCurrentOrder()?.status === 'pending_verification' 
                            ? 'bg-amber-100' : 'bg-gray-100'
                          }`}>
                            <CheckCircle className={`w-5 h-5 ${
-                             selectedOrder.status === 'completed' || selectedOrder.status === 'ready' || 
-                             selectedOrder.status === 'preparing' || selectedOrder.status === 'pending' || selectedOrder.status === 'pending_verification' 
+                             getCurrentOrder()?.status === 'completed' || getCurrentOrder()?.status === 'ready' || 
+                             getCurrentOrder()?.status === 'preparing' || getCurrentOrder()?.status === 'pending' || getCurrentOrder()?.status === 'pending_verification' 
                              ? 'text-amber-600' : 'text-gray-400'
                            }`} />
                          </div>
                          <div className="ml-4">
                            <p className="font-bold text-gray-900">Order Confirmed</p>
                            <p className="text-sm text-gray-500">
-                             {selectedOrder.status === 'completed' || selectedOrder.status === 'ready' || 
-                              selectedOrder.status === 'preparing' || selectedOrder.status === 'pending' || selectedOrder.status === 'pending_verification' 
+                             {getCurrentOrder()?.status === 'completed' || getCurrentOrder()?.status === 'ready' || 
+                              getCurrentOrder()?.status === 'preparing' || getCurrentOrder()?.status === 'pending' || getCurrentOrder()?.status === 'pending_verification' 
                               ? 'Confirmed' : 'Pending'}
                            </p>
                          </div>
@@ -621,24 +812,24 @@ const CustomerOrders: React.FC = () => {
 
                        <div className="flex items-center">
                          <div className={`p-2 rounded-full ${
-                           selectedOrder.status === 'completed' || selectedOrder.status === 'ready' || 
-                           selectedOrder.status === 'preparing' || selectedOrder.status === 'pending' || selectedOrder.status === 'pending_verification' 
+                           getCurrentOrder()?.status === 'completed' || getCurrentOrder()?.status === 'ready' || 
+                           getCurrentOrder()?.status === 'preparing' || getCurrentOrder()?.status === 'pending' || getCurrentOrder()?.status === 'pending_verification' 
                            ? 'bg-amber-100' : 'bg-gray-100'
                          }`}>
                            <Utensils className={`w-5 h-5 ${
-                             selectedOrder.status === 'completed' || selectedOrder.status === 'ready' || 
-                             selectedOrder.status === 'preparing' || selectedOrder.status === 'pending' || selectedOrder.status === 'pending_verification' 
+                             getCurrentOrder()?.status === 'completed' || getCurrentOrder()?.status === 'ready' || 
+                             getCurrentOrder()?.status === 'preparing' || getCurrentOrder()?.status === 'pending' || getCurrentOrder()?.status === 'pending_verification' 
                              ? 'text-amber-600' : 'text-gray-400'
                            }`} />
                          </div>
                          <div className="ml-4">
                            <p className="font-bold text-gray-900">Preparing Your Order</p>
                            <p className="text-sm text-gray-500">
-                             {selectedOrder.status === 'completed' || selectedOrder.status === 'ready' 
+                             {getCurrentOrder()?.status === 'completed' || getCurrentOrder()?.status === 'ready' 
                               ? 'Completed' : 
-                              selectedOrder.status === 'preparing' 
+                              getCurrentOrder()?.status === 'preparing' 
                               ? 'In Progress....' : 
-                              selectedOrder.status === 'pending' || selectedOrder.status === 'pending_verification' 
+                              getCurrentOrder()?.status === 'pending' || getCurrentOrder()?.status === 'pending_verification' 
                               ? 'Confirmed' : 'Pending'}
                            </p>
                          </div>
@@ -646,20 +837,20 @@ const CustomerOrders: React.FC = () => {
 
                        <div className="flex items-center">
                          <div className={`p-2 rounded-full ${
-                           selectedOrder.status === 'completed' || selectedOrder.status === 'ready' 
+                           getCurrentOrder()?.status === 'completed' || getCurrentOrder()?.status === 'ready' 
                            ? 'bg-amber-100' : 'bg-gray-100'
                          }`}>
                            <Bell className={`w-5 h-5 ${
-                             selectedOrder.status === 'completed' || selectedOrder.status === 'ready' 
+                             getCurrentOrder()?.status === 'completed' || getCurrentOrder()?.status === 'ready' 
                              ? 'text-amber-600' : 'text-gray-400'
                            }`} />
                          </div>
                          <div className="ml-4">
                            <p className="font-bold text-gray-900">Ready</p>
                            <p className="text-sm text-gray-500">
-                             {selectedOrder.status === 'completed' 
+                             {getCurrentOrder()?.status === 'completed' 
                               ? 'Completed' : 
-                              selectedOrder.status === 'ready' 
+                              getCurrentOrder()?.status === 'ready' 
                               ? 'Ready!' : 'To serve'}
                            </p>
                          </div>
@@ -671,7 +862,7 @@ const CustomerOrders: React.FC = () => {
                    <div className="p-6 border-t border-gray-100">
                      <h4 className="text-lg font-bold text-gray-900 mb-4">Ordered Items</h4>
                      <div className="space-y-3">
-                       {selectedOrder.items.map((item, index) => (
+                       {getCurrentOrder()?.items?.map((item, index) => (
                          <div key={index} className="flex justify-between items-center">
                            <div className="flex-1">
                              <p className="text-gray-900">{item.quantity} x {item.name}</p>
@@ -695,28 +886,28 @@ const CustomerOrders: React.FC = () => {
                      <div className="grid grid-cols-2 gap-4 mb-4">
                        <div>
                          <p className="text-sm text-gray-600 mb-1">Payment Method</p>
-                         <p className="font-medium text-gray-900 capitalize">{selectedOrder.payment_method || 'Not specified'}</p>
+                         <p className="font-medium text-gray-900 capitalize">{getCurrentOrder()?.payment_method || 'Not specified'}</p>
                        </div>
                        <div>
                          <p className="text-sm text-gray-600 mb-1">Payment Status</p>
                          <p className={`font-medium ${
-                           selectedOrder.payment_status === 'paid' ? 'text-green-600' :
-                           selectedOrder.payment_status === 'failed' ? 'text-red-600' :
+                           getCurrentOrder()?.payment_status === 'paid' ? 'text-green-600' :
+                           getCurrentOrder()?.payment_status === 'failed' ? 'text-red-600' :
                            'text-amber-600'
                          }`}>
-                           {selectedOrder.payment_status === 'paid' ? 'Paid' :
-                            selectedOrder.payment_status === 'failed' ? 'Failed' :
+                           {getCurrentOrder()?.payment_status === 'paid' ? 'Paid' :
+                            getCurrentOrder()?.payment_status === 'failed' ? 'Failed' :
                             'Pending'}
                          </p>
                        </div>
                      </div>
                      
                      {/* Receipt Upload for Digital Payments */}
-                     {selectedOrder.payment_status === 'pending' && (selectedOrder.payment_method === 'gcash' || selectedOrder.payment_method === 'paymaya') && (
+                     {getCurrentOrder()?.payment_status === 'pending' && (getCurrentOrder()?.payment_method === 'gcash' || getCurrentOrder()?.payment_method === 'paymaya') && (
                        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                          <h5 className="font-medium text-blue-900 mb-2">Upload Payment Receipt</h5>
                          <p className="text-sm text-blue-700 mb-3">
-                           Please scan the QR code with your {selectedOrder.payment_method?.toUpperCase()} app, complete the payment, and upload the receipt screenshot below.
+                           Please scan the QR code with your {getCurrentOrder()?.payment_method?.toUpperCase()} app, complete the payment, and upload the receipt screenshot below.
                          </p>
                          <div className="space-y-3">
                            <div>
@@ -734,9 +925,9 @@ const CustomerOrders: React.FC = () => {
                                  try {
                                    const formData = new FormData();
                                    formData.append('receipt', file);
-                                   formData.append('orderId', selectedOrder.order_id);
+                                   formData.append('orderId', getCurrentOrder()?.order_id || '');
                                    
-                                   const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/receipts/upload-receipt`, {
+                                  const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/receipts/upload-receipt`, {
                                      method: 'POST',
                                      credentials: 'include',
                                      body: formData,
@@ -744,12 +935,12 @@ const CustomerOrders: React.FC = () => {
                                    
                                    const result = await response.json();
                                    
-                                   if (result.success) {
+                                   if (response.ok && result.success) {
                                      alert('Receipt uploaded successfully! Your payment is being verified.');
                                      // Refresh orders to update status
                                      fetchOrders();
                                    } else {
-                                     alert(`Failed to upload receipt: ${result.message}`);
+                                     alert(`Failed to upload receipt: ${result.message || 'Upload failed'}`);
                                    }
                                  } catch (error) {
                                    console.error('Receipt upload error:', error);
@@ -770,7 +961,7 @@ const CustomerOrders: React.FC = () => {
                    {/* Total Amount */}
                    <div className="p-6 border-t border-gray-100 bg-gray-50">
                      <h4 className="text-lg font-bold text-gray-900 mb-2">Total Amount</h4>
-                     <p className="text-2xl font-bold text-amber-600">₱{formatPrice(selectedOrder.total_price)}</p>
+                     <p className="text-2xl font-bold text-amber-600">₱{formatPrice(getCurrentOrder()?.total_price || 0)}</p>
                    </div>
                  </div>
                ) : (
@@ -789,17 +980,6 @@ const CustomerOrders: React.FC = () => {
                        className="bg-amber-600 text-white px-6 py-2 rounded-lg hover:bg-amber-700 transition-colors"
                      >
                        Browse Menu
-                     </button>
-                     
-                     {/* Debug button */}
-                     <button
-                       onClick={() => {
-                         console.log('🔍 Manual refresh triggered');
-                         fetchOrders();
-                       }}
-                       className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                     >
-                       Debug: Refresh Orders
                      </button>
                    </div>
                  </div>
@@ -1149,10 +1329,33 @@ const CustomerOrders: React.FC = () => {
                           <span className="text-sm text-gray-600">Service Option</span>
                           <span className="text-sm font-medium text-gray-900 capitalize">{order.order_type.replace('_', '-')}</span>
                         </div>
-                        <div className="flex justify-between items-center">
+                        <div className="flex justify-between items-center mb-4">
                           <span className="text-sm text-gray-600">Total Amount</span>
                           <span className="text-lg font-bold text-amber-600">₱{formatPrice(order.total_price)}</span>
                         </div>
+                        
+                        {/* Feedback Button for Completed Orders */}
+                        {order.status === 'completed' && !ordersWithFeedback.has(order.order_id) && (
+                          <div className="flex justify-end">
+                            <button
+                              onClick={() => handleFeedbackClick(order)}
+                              className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+                            >
+                              <Star className="w-4 h-4" />
+                              Leave Feedback
+                            </button>
+                          </div>
+                        )}
+                        
+                        {/* Feedback Submitted Indicator */}
+                        {order.status === 'completed' && ordersWithFeedback.has(order.order_id) && (
+                          <div className="flex justify-end">
+                            <div className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 rounded-lg">
+                              <Star className="w-4 h-4 fill-current" />
+                              Feedback Submitted
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))
@@ -1322,13 +1525,13 @@ const CustomerOrders: React.FC = () => {
                 <div className="mb-2">
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <ProgressBar 
-                      value={getProgressPercentage(selectedOrderForDetails.status)}
+                      value={getRealtimeProgress(selectedOrderForDetails)}
                       variant="gradient"
                       aria-label="Order progress"
                       title="Order progress"
                     />
                   </div>
-                  <p className="text-sm text-gray-600 mt-1">{getProgressPercentage(selectedOrderForDetails.status)}% Complete</p>
+                  <p className="text-sm text-gray-600 mt-1">{getRealtimeProgress(selectedOrderForDetails)}% Complete</p>
                 </div>
               </div>
 
@@ -1433,6 +1636,150 @@ const CustomerOrders: React.FC = () => {
                   <span className="text-2xl font-bold text-amber-600">₱{formatPrice(selectedOrderForDetails.total_price)}</span>
                 </div>
               </div>
+
+              {/* Feedback Button for Completed Orders */}
+              {selectedOrderForDetails.status === 'completed' && !ordersWithFeedback.has(selectedOrderForDetails.order_id) && (
+                <div className="p-6 border-t border-gray-100">
+                  <div className="flex justify-center">
+                    <button
+                      onClick={() => handleFeedbackClick(selectedOrderForDetails)}
+                      className="flex items-center gap-2 px-6 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium"
+                    >
+                      <Star className="w-5 h-5" />
+                      Leave Feedback
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              {/* Feedback Submitted Indicator */}
+              {selectedOrderForDetails.status === 'completed' && ordersWithFeedback.has(selectedOrderForDetails.order_id) && (
+                <div className="p-6 border-t border-gray-100">
+                  <div className="flex justify-center">
+                    <div className="flex items-center gap-2 px-6 py-3 bg-green-100 text-green-800 rounded-lg">
+                      <Star className="w-5 h-5 fill-current" />
+                      Feedback Submitted
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Feedback Modal */}
+      {showFeedbackModal && selectedOrderForFeedback && (
+        <div className="fixed inset-0 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-2xl font-bold text-gray-900">Leave Feedback</h2>
+                <button
+                  onClick={() => setShowFeedbackModal(false)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                  aria-label="Close feedback modal"
+                  title="Close feedback modal"
+                >
+                  <X className="w-6 h-6 text-gray-500" />
+                </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              <form onSubmit={handleSubmitFeedback} className="space-y-6">
+                {/* Order Info */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="font-semibold text-gray-900 mb-2">Order Details</h3>
+                  <p className="text-sm text-gray-600">Order ID: {selectedOrderForFeedback.order_id}</p>
+                  <p className="text-sm text-gray-600">Total: ₱{formatPrice(selectedOrderForFeedback.total_price)}</p>
+                </div>
+
+                {/* Rating */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">Rating</label>
+                  <div className="flex items-center space-x-2">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => setFeedbackRating(star)}
+                          className={`p-1 rounded ${
+                            star <= feedbackRating
+                              ? 'text-yellow-400'
+                              : 'text-gray-300'
+                          } hover:text-yellow-400 transition-colors`}
+                          title={`Rate ${star} star${star !== 1 ? 's' : ''}`}
+                          aria-label={`Rate ${star} star${star !== 1 ? 's' : ''}`}
+                        >
+                        <Star className="w-6 h-6 fill-current" />
+                      </button>
+                    ))}
+                    <span className="ml-2 text-sm text-gray-600">
+                      {feedbackRating} star{feedbackRating !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Category */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                  <select
+                    value={feedbackCategory}
+                    onChange={(e) => setFeedbackCategory(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    title="Select feedback category"
+                    aria-label="Select feedback category"
+                  >
+                    <option value="General">General</option>
+                    <option value="Food Quality">Food Quality</option>
+                    <option value="Service">Service</option>
+                    <option value="Ambiance">Ambiance</option>
+                    <option value="Speed">Speed</option>
+                    <option value="Value">Value</option>
+                  </select>
+                </div>
+
+                {/* Comment */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Comment (Optional)</label>
+                  <textarea
+                    value={feedbackComment}
+                    onChange={(e) => setFeedbackComment(e.target.value)}
+                    placeholder="Tell us about your experience..."
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  />
+                </div>
+
+                {/* Submit Button */}
+                <div className="flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowFeedbackModal(false)}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingFeedback}
+                    className="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  >
+                    {submittingFeedback ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        Submitting...
+                      </>
+                    ) : (
+                      <>
+                        <MessageSquare className="w-4 h-4" />
+                        Submit Feedback
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

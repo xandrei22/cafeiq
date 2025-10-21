@@ -2,13 +2,52 @@ const pool = require('../config/db');
 
 // Submit new feedback
 const submitFeedback = async(req, res) => {
-    const { customer_name, rating, comment, category } = req.body;
+    const { customer_name, rating, comment, category, customer_email, order_id } = req.body;
     if (!customer_name || !rating) {
         return res.status(400).json({ message: 'Customer name and rating are required.' });
     }
+
+    // Check if customer has placed any orders
+    if (customer_email) {
+        try {
+            const [orderCheck] = await pool.query(
+                'SELECT COUNT(*) as orderCount FROM orders WHERE customer_id IN (SELECT id FROM customers WHERE email = ?)', [customer_email]
+            );
+
+            if (orderCheck[0].orderCount === 0) {
+                return res.status(403).json({
+                    message: 'You must place at least one order before leaving feedback.',
+                    hasOrders: false
+                });
+            }
+        } catch (error) {
+            console.error('Error checking customer orders:', error);
+            return res.status(500).json({ message: 'Error verifying customer orders.' });
+        }
+    }
+
+    // Check if feedback already exists for this order (if order_id is provided)
+    if (order_id && customer_email) {
+        try {
+            const [existingFeedback] = await pool.query(
+                'SELECT COUNT(*) as feedbackCount FROM feedback WHERE customer_email = ? AND order_id = ?', [customer_email, order_id]
+            );
+
+            if (existingFeedback[0].feedbackCount > 0) {
+                return res.status(409).json({
+                    message: 'You have already submitted feedback for this order.',
+                    hasFeedback: true
+                });
+            }
+        } catch (error) {
+            console.error('Error checking existing feedback:', error);
+            return res.status(500).json({ message: 'Error checking existing feedback.' });
+        }
+    }
+
     try {
         const [result] = await pool.query(
-            'INSERT INTO feedback (customer_name, rating, comment, category) VALUES (?, ?, ?, ?)', [customer_name, rating, comment, category]
+            'INSERT INTO feedback (customer_name, rating, comment, category, customer_email, order_id) VALUES (?, ?, ?, ?, ?, ?)', [customer_name, rating, comment, category, customer_email, order_id]
         );
 
         // Emit real-time update for feedback submission

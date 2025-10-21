@@ -25,10 +25,12 @@ const AdminLoyaltySettings: React.FC = () => {
         fetchSettings();
     }, []);
 
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
     const fetchSettings = async () => {
         setLoading(true);
         try {
-            const res = await fetch('/api/admin/loyalty/settings', {
+            const res = await fetch(`${API_URL}/api/admin/loyalty/settings`, {
                 credentials: 'include'
             });
             if (res.ok) {
@@ -63,7 +65,7 @@ const AdminLoyaltySettings: React.FC = () => {
                 if (setting) settingsToUpdate[key] = (setting as any).value;
             });
             console.log('Saving settings:', settingsToUpdate);
-            const res = await fetch('/api/admin/loyalty/settings', {
+            const res = await fetch(`${API_URL}/api/admin/loyalty/settings`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -92,10 +94,12 @@ const AdminLoyaltySettings: React.FC = () => {
         if (!settings || !settings[settingKey]) return;
         const currentValue = settings[settingKey]?.value || 'false';
         const newValue = currentValue === 'true' ? 'false' : 'true';
+        setSaving(true);
+        setError(null);
         setSettings(prev => prev ? { ...prev, [settingKey]: { ...(prev as any)[settingKey], value: newValue } } : null);
         try {
             console.log('Toggling setting:', settingKey, 'to', newValue);
-            const res = await fetch('/api/admin/loyalty/settings', {
+            const res = await fetch(`${API_URL}/api/admin/loyalty/settings`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -115,6 +119,8 @@ const AdminLoyaltySettings: React.FC = () => {
             console.error('Error toggling setting:', e);
             setSettings(prev => prev ? { ...prev, [settingKey]: { ...(prev as any)[settingKey], value: currentValue } } : null);
             setError('Failed to update setting');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -179,7 +185,12 @@ const AdminLoyaltySettings: React.FC = () => {
                             <p className="font-medium text-gray-900">Welcome Points</p>
                             <p className="text-sm text-gray-600">Enable/disable welcome points for new customers</p>
                         </div>
-                        <Button variant="outline" onClick={() => toggleSetting('welcome_points_enabled')} className={settings.welcome_points_enabled?.value === 'true' ? 'bg-green-100 border-green-200 text-green-800' : 'bg-red-100 border-red-200 text-red-800'} disabled={saving}>
+                        <Button 
+                            variant="outline" 
+                            onClick={() => toggleSetting('welcome_points_enabled')} 
+                            className={`${settings.welcome_points_enabled?.value === 'true' ? 'bg-green-100 border-green-200 text-green-800 hover:bg-green-200' : 'bg-red-100 border-red-200 text-red-800 hover:bg-red-200'} ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            disabled={saving}
+                        >
                             {saving ? 'Saving...' : (settings.welcome_points_enabled?.value === 'true' ? 'Enabled' : 'Disabled')}
                         </Button>
                     </div>
@@ -191,7 +202,12 @@ const AdminLoyaltySettings: React.FC = () => {
                             <p className="font-medium text-gray-900">Loyalty System</p>
                             <p className="text-sm text-gray-600">Enable/disable loyalty points earning</p>
                         </div>
-                        <Button variant="outline" onClick={() => toggleSetting('loyalty_enabled')} className={settings.loyalty_enabled?.value === 'true' ? 'bg-green-100 border-green-200 text-green-800' : 'bg-red-100 border-red-200 text-red-800'} disabled={saving}>
+                        <Button 
+                            variant="outline" 
+                            onClick={() => toggleSetting('loyalty_enabled')} 
+                            className={`${settings.loyalty_enabled?.value === 'true' ? 'bg-green-100 border-green-200 text-green-800 hover:bg-green-200' : 'bg-red-100 border-red-200 text-red-800 hover:bg-red-200'} ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            disabled={saving}
+                        >
                             {saving ? 'Saving...' : (settings.loyalty_enabled?.value === 'true' ? 'Enabled' : 'Disabled')}
                         </Button>
                     </div>
@@ -200,7 +216,12 @@ const AdminLoyaltySettings: React.FC = () => {
                             <p className="font-medium text-gray-900">Rewards Redemption</p>
                             <p className="text-sm text-gray-600">Enable/disable rewards redemption</p>
                         </div>
-                        <Button variant="outline" onClick={() => toggleSetting('rewards_enabled')} className={settings.rewards_enabled?.value === 'true' ? 'bg-green-100 border-green-200 text-green-800' : 'bg-red-100 border-red-200 text-red-800'} disabled={saving}>
+                        <Button 
+                            variant="outline" 
+                            onClick={() => toggleSetting('rewards_enabled')} 
+                            className={`${settings.rewards_enabled?.value === 'true' ? 'bg-green-100 border-green-200 text-green-800 hover:bg-green-200' : 'bg-red-100 border-red-200 text-red-800 hover:bg-red-200'} ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            disabled={saving}
+                        >
                             {saving ? 'Saving...' : (settings.rewards_enabled?.value === 'true' ? 'Enabled' : 'Disabled')}
                         </Button>
                     </div>

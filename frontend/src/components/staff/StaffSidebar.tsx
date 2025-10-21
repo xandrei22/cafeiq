@@ -19,7 +19,7 @@ const menuItems = [
   { label: "Manage Inventory", path: "/staff/inventory", icon: "/images/inventory.png" },
   { label: "Orders", path: "/staff/orders", icon: "/images/Orders.png" },
   { label: "POS System", path: "/staff/pos", icon: "/images/payment.png" },
-  { label: "Loyalty Points", path: "/staff/loyalty", icon: "/images/loyalty points.png" },
+  { label: "Loyalty", path: "/staff/loyalty", icon: "/images/loyalty points.png" },
   { label: "Sales", path: "/staff/sales", icon: "/images/payment.png" },
   { label: "Activity Logs", path: "/staff/activity-logs", icon: "/images/activity logs.png" },
 ];
@@ -64,16 +64,18 @@ const StaffSidebar: React.FC = () => {
     <Sidebar collapsible="icon" className="w-64 bg-white border-r hidden sm:flex">
       <SidebarHeader className="bg-[#a87437] text-white h-14">
         <div className="flex flex-row items-center gap-1 h-full pl-2 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:pl-0">
-          <div className="bg-white rounded-full p-0.5 group-data-[collapsible=icon]:p-0.5">
-            <img
-              src="/images/logo.png"
-              alt="CaféIQ Staff Logo"
-              className="h-3 w-3 object-cover group-data-[collapsible=icon]:h-3 group-data-[collapsible=icon]:w-3"
-            />
+          <div className="group-data-[collapsible=icon]:p-0.5">
+            <div className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center p-1 border border-white/80 group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8">
+              <img 
+                src="/images/mau-removebg-preview.png" 
+                alt="Mauricio's Cafe and Bakery Logo" 
+                className="h-8 w-8 object-contain group-data-[collapsible=icon]:h-6 group-data-[collapsible=icon]:w-6"
+              />
+            </div>
           </div>
           <div className="group-data-[collapsible=icon]:hidden">
-            <div className="font-bold text-xs text-white">CaféIQ</div>
-            <div className="text-xs text-white/90 leading-none">Mauricio's Cafe and Bakery</div>
+            <div className="font-bold text-xs text-white">Mauricio's</div>
+            <div className="text-xs text-white/90 leading-none">Cafe and Bakery</div>
           </div>
         </div>
       </SidebarHeader>
@@ -137,7 +139,7 @@ const StaffSidebar: React.FC = () => {
             </div>
             <div className="flex flex-col group-data-[collapsible=icon]:hidden">
               <span className="font-semibold text-[#6B5B5B]">Staff</span>
-              <span className="text-xs text-[#6B5B5B]/70">Staff Portal v1.0</span>
+              <span className="text-xs text-[#6B5B5B]/70">{(JSON.parse(localStorage.getItem('staffUser') || '{}')?.email) || 'staff@example.com'}</span>
             </div>
           </div>
         </div>

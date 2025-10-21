@@ -13,7 +13,7 @@ interface AdminSettings {
 }
 
 const AdminSettings: React.FC = () => {
-    useAuth();
+    const { user } = useAuth();
     const [settings, setSettings] = useState<AdminSettings | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);

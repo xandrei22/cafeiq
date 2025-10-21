@@ -529,9 +529,23 @@ router.get('/menu', async(req, res) => {
             ORDER BY category, name
         `);
 
+        // Deduplicate items by name - keep the one with highest ID (most recent)
+        const uniqueItems = [];
+        const seenNames = new Set();
+
+        // Sort by ID descending to keep the most recent version
+        const sortedItems = menuItems.sort((a, b) => b.id - a.id);
+
+        for (const item of sortedItems) {
+            if (!seenNames.has(item.name)) {
+                seenNames.add(item.name);
+                uniqueItems.push(item);
+            }
+        }
+
         res.json({
             success: true,
-            menu_items: menuItems
+            menu_items: uniqueItems
         });
     } catch (error) {
         console.error('Error fetching menu items:', error);

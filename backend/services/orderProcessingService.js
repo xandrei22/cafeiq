@@ -468,8 +468,11 @@ class OrderProcessingService {
         const connection = await db.getConnection();
 
         try {
-            // Get orders for the customer by email
-            // First try to find by customer table join, then fallback to customer_name matching
+            // Build inclusive matching using email, exact display name, and name-like email local part
+            const emailLocal = (customerEmail || '').split('@')[0] || '';
+            const nameLikeFromLocal = emailLocal.replace(/[._-]+/g, ' ').trim();
+
+            // Get orders for the customer by multiple heuristics (case-insensitive)
             const [orders] = await connection.query(`
                 SELECT 
                     o.id,
@@ -489,11 +492,18 @@ class OrderProcessingService {
                     o.notes
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
-                WHERE c.email = ? 
-                   OR o.customer_name = ?
-                   OR o.customer_name LIKE ?
+                WHERE LOWER(c.email) = LOWER(?)
+                   OR LOWER(o.customer_name) = LOWER(?)
+                   OR LOWER(o.customer_name) LIKE LOWER(?)
+                   OR (LENGTH(?) > 0 AND LOWER(o.customer_name) LIKE LOWER(?))
                 ORDER BY o.order_time DESC
-            `, [customerEmail, customerEmail, `%${customerEmail}%`]);
+            `, [
+                customerEmail,
+                customerEmail,
+                `%${customerEmail}%`,
+                nameLikeFromLocal,
+                `%${nameLikeFromLocal}%`
+            ]);
 
             // Parse JSON items for each order
             orders.forEach(order => {

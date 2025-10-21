@@ -70,8 +70,9 @@ const StaffInventory: React.FC = () => {
   // Initial data fetch and WebSocket setup
   useEffect(() => {
     // Initialize Socket.IO connection
-    const newSocket = io('http://localhost:5001', {
-      transports: ['websocket', 'polling'],
+    const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:5001', {
+      transports: ['polling', 'websocket'],
+      path: '/socket.io',
       timeout: 30000,
       forceNew: true,
       autoConnect: true

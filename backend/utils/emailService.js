@@ -201,6 +201,7 @@ async function sendEventStatusEmail(to, status, event) {
             <p>Dear Customer,</p>
             <p>Your event request for <b>${event.event_date}</b> at <b>${event.address}</b> for <b>${event.cups}</b> cups of coffee has been <b>${statusText}</b> by the admin.</p>
             <p>Contact Number: ${event.contact_number}</p>
+            ${status === 'accepted' ? '<p><b>You will be contacted for further details regarding your event.</b></p>' : ''}
             <p>Thank you for choosing our Coffee Shop!</p>
         `;
         await transporter.sendMail({

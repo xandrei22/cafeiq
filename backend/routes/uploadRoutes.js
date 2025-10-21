@@ -70,9 +70,14 @@ async function processImage(inputPath, outputPath, options = {}) {
 }
 
 // Upload menu image with optimization
-router.post('/menu-image', upload.single('image'), async (req, res) => {
+router.post('/menu-image', upload.single('image'), async(req, res) => {
     try {
+        console.log('📸 Image upload request received');
+        console.log('Request body:', req.body);
+        console.log('Request file:', req.file);
+
         if (!req.file) {
+            console.log('❌ No image file provided');
             return res.status(400).json({
                 success: false,
                 error: 'No image file provided'
@@ -117,6 +122,9 @@ router.post('/menu-image', upload.single('image'), async (req, res) => {
         optimizedVersions.tiny = `/uploads/menu/${path.basename(tinyPath)}`;
         optimizedVersions.fallback = `/uploads/menu/${path.basename(jpegPath)}`;
 
+        console.log('✅ Image uploaded and optimized successfully');
+        console.log('Optimized versions:', optimizedVersions);
+
         res.json({
             success: true,
             filename: baseName,
@@ -125,7 +133,8 @@ router.post('/menu-image', upload.single('image'), async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error uploading image:', error);
+        console.error('❌ Error uploading image:', error);
+        console.error('Error details:', error.message);
         res.status(500).json({
             success: false,
             error: 'Failed to upload and optimize image'
@@ -134,7 +143,7 @@ router.post('/menu-image', upload.single('image'), async (req, res) => {
 });
 
 // Bulk image optimization endpoint
-router.post('/optimize-existing', async (req, res) => {
+router.post('/optimize-existing', async(req, res) => {
     try {
         const files = fs.readdirSync(dir);
         const imageFiles = files.filter(file =>

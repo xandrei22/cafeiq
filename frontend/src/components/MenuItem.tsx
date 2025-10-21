@@ -15,6 +15,7 @@ interface MenuItemProps {
     image_url?: string;
     category?: string;
     is_available?: boolean;
+    allow_customization?: boolean;
   };
   onAddToCart: (item: any) => void;
   hasTableAccess?: boolean;
@@ -42,18 +43,32 @@ const MenuItem: React.FC<MenuItemProps> = ({ item, onAddToCart, hasTableAccess =
     <Card className="bg-white border shadow-lg hover:shadow-xl transition-shadow duration-300">
       <CardContent className="p-4">
         <div className="flex gap-4">
-          {/* Image */}
-          <div className="h-20 w-20 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-lg bg-gray-100">
-            {item.image_url ? (
+          {/* Image - Larger container */}
+          <div className="h-32 w-32 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-lg bg-gray-50 p-2">
+            {item.image_url && item.image_url !== '' && item.image_url !== 'null' && item.image_url !== 'undefined' ? (
               <OptimizedImage
-                src={item.image_url.startsWith('http') ? item.image_url : `${window.location.origin.replace(':5173', ':5001')}${item.image_url}`}
+                src={(() => {
+                  const path = (item.image_url || '').trim();
+                  if (!path) return '';
+                  if (/^https?:\/\//i.test(path)) return path;
+                  const withSlash = path.startsWith('/') ? path : `/${path}`;
+                  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+                  return withSlash;
+                })()}
                 alt={item.name}
-                className="w-full h-full object-contain p-1"
+                className="w-full h-full object-contain"
                 lazy={true}
-                sizes="80px"
+                sizes="128px"
               />
             ) : (
-              <Coffee className="h-6 w-6 text-[#a87437]" />
+              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg">
+                <div className="text-center">
+                  <div className="w-12 h-12 mx-auto mb-2 bg-white rounded-full flex items-center justify-center shadow-sm border-2 border-gray-200">
+                    <span className="text-gray-500 text-lg">🍽️</span>
+                  </div>
+                  <p className="text-xs text-gray-500">No Image</p>
+                </div>
+              </div>
             )}
           </div>
           
@@ -72,11 +87,15 @@ const MenuItem: React.FC<MenuItemProps> = ({ item, onAddToCart, hasTableAccess =
                 </Badge>
               )}
               <span className="text-base sm:text-lg font-semibold text-amber-700">
-                ₱{Number(item.price).toFixed(2)}
+                ₱{Number(item.price || item.base_price || 0).toFixed(2)}
               </span>
               <Badge 
                 variant={isAvailable ? "default" : "secondary"}
-                className="text-sm"
+                className={`text-sm ${
+                  isAvailable 
+                    ? "bg-green-100 text-green-800 border-green-200" 
+                    : "bg-gray-100 text-gray-600 border-gray-200"
+                }`}
               >
                 {isAvailable ? 'Available' : 'Unavailable'}
               </Badge>
@@ -85,16 +104,18 @@ const MenuItem: React.FC<MenuItemProps> = ({ item, onAddToCart, hasTableAccess =
           
           {/* Action Buttons */}
           <div className="flex flex-col gap-2">
-            <Button
-              onClick={() => onAddToCart({ ...item, customization: true })}
-              disabled={!hasTableAccess || !isAvailable}
-              size="sm"
-              variant="outline"
-              className="text-xs whitespace-nowrap"
-              title={!hasTableAccess ? 'Table access required to customize items' : !isAvailable ? 'Item unavailable' : 'Customize this item'}
-            >
-              Customize
-            </Button>
+            {item.allow_customization && (
+              <Button
+                onClick={() => onAddToCart({ ...item, customization: true })}
+                disabled={!hasTableAccess || !isAvailable}
+                size="sm"
+                variant="outline"
+                className="text-xs whitespace-nowrap"
+                title={!hasTableAccess ? 'Table access required to customize items' : !isAvailable ? 'Item unavailable' : 'Customize this item'}
+              >
+                Customize
+              </Button>
+            )}
             <Button
               onClick={handleAddToCart}
               disabled={!hasTableAccess || !isAvailable}

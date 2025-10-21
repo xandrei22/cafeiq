@@ -15,8 +15,22 @@ router.get('/items', async(req, res) => {
             ORDER BY category, name
         `);
 
-        // Then get ingredients for each menu item separately
-        const processedItems = await Promise.all(items.map(async(item) => {
+        // Deduplicate items by name - keep the one with highest ID (most recent)
+        const uniqueItems = [];
+        const seenNames = new Set();
+
+        // Sort by ID descending to keep the most recent version
+        const sortedItems = items.sort((a, b) => b.id - a.id);
+
+        for (const item of sortedItems) {
+            if (!seenNames.has(item.name)) {
+                seenNames.add(item.name);
+                uniqueItems.push(item);
+            }
+        }
+
+        // Then get ingredients for each unique menu item separately
+        const processedItems = await Promise.all(uniqueItems.map(async(item) => {
             const [ingredients] = await db.query(`
                 SELECT 
                     mii.ingredient_id,
@@ -49,7 +63,7 @@ router.get('/items', async(req, res) => {
             };
         }));
 
-        console.log('Processed customer menu items with ingredients:', processedItems);
+        console.log('Processed customer menu items with ingredients:', processedItems.length);
 
         res.json({ success: true, items: processedItems });
     } catch (error) {
@@ -67,8 +81,22 @@ router.get('/', async(req, res) => {
             ORDER BY category, name
         `);
 
-        // Then get ingredients for each menu item separately
-        const processedMenuItems = await Promise.all(menuItems.map(async(item) => {
+        // Deduplicate items by name - keep the one with highest ID (most recent)
+        const uniqueItems = [];
+        const seenNames = new Set();
+
+        // Sort by ID descending to keep the most recent version
+        const sortedItems = menuItems.sort((a, b) => b.id - a.id);
+
+        for (const item of sortedItems) {
+            if (!seenNames.has(item.name)) {
+                seenNames.add(item.name);
+                uniqueItems.push(item);
+            }
+        }
+
+        // Then get ingredients for each unique menu item separately
+        const processedMenuItems = await Promise.all(uniqueItems.map(async(item) => {
             const [ingredients] = await db.query(`
                 SELECT 
                     mii.ingredient_id,
@@ -119,7 +147,21 @@ router.get('/pos', async(req, res) => {
             ORDER BY category, name
         `);
 
-        res.json({ success: true, menu_items: items });
+        // Deduplicate items by name - keep the one with highest ID (most recent)
+        const uniqueItems = [];
+        const seenNames = new Set();
+
+        // Sort by ID descending to keep the most recent version
+        const sortedItems = items.sort((a, b) => b.id - a.id);
+
+        for (const item of sortedItems) {
+            if (!seenNames.has(item.name)) {
+                seenNames.add(item.name);
+                uniqueItems.push(item);
+            }
+        }
+
+        res.json({ success: true, menu_items: uniqueItems });
     } catch (error) {
         console.error('Error fetching POS menu items:', error);
         res.status(500).json({ success: false, error: 'Failed to fetch POS menu items' });
@@ -141,7 +183,8 @@ router.post('/', async(req, res) => {
             variants,
             ingredients,
             image_url,
-            imageUrl
+            imageUrl,
+            allow_customization
         } = req.body;
 
         // Validate required fields
@@ -167,12 +210,13 @@ router.post('/', async(req, res) => {
                 cost,
                 visible_in_pos,
                 visible_in_customer_menu,
+                allow_customization,
                 add_ons,
                 order_notes,
                 notes,
                 image_url,
                 is_available
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             name,
             description || '',
@@ -181,6 +225,7 @@ router.post('/', async(req, res) => {
             cost || 0,
             true, // visible_in_pos default true
             true, // visible_in_customer_menu default true
+            allow_customization !== false,
             addOns || false,
             orderNotes || false,
             notes || '',
@@ -348,7 +393,8 @@ router.put('/:id', async(req, res) => {
             variants,
             isAvailable,
             image_url,
-            imageUrl
+            imageUrl,
+            allow_customization
         } = req.body;
 
         console.log('Updating menu item:', { id, name, category, sellingPrice, cost, ingredients: req.body.ingredients });
@@ -375,6 +421,7 @@ router.put('/:id', async(req, res) => {
                 cost = ?,
                 visible_in_pos = ?,
                 visible_in_customer_menu = ?,
+                allow_customization = ?,
                 add_ons = ?,
                 order_notes = ?,
                 notes = ?,
@@ -390,6 +437,7 @@ router.put('/:id', async(req, res) => {
             cost || 0,
             true, // visible_in_pos default true
             true, // visible_in_customer_menu default true
+            allow_customization !== false,
             addOns || false,
             orderNotes || false,
             notes || '',
@@ -959,20 +1007,81 @@ router.get('/search', async(req, res) => {
 });
 
 // Get menu categories
+// Get menu categories (union of explicit categories table and existing item categories)
 router.get('/categories', async(req, res) => {
     try {
-        const [categories] = await db.query(`
-            SELECT DISTINCT category FROM menu_items 
-            WHERE is_available = TRUE AND visible_in_customer_menu = TRUE
+        // Ensure auxiliary table exists
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS menu_categories (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL UNIQUE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+
+        const [rows] = await db.query(`
+            SELECT name AS category FROM menu_categories
+            UNION
+            SELECT DISTINCT category FROM menu_items
             ORDER BY category
         `);
 
-        const categoryList = categories.map(cat => cat.category);
-
-        res.json({ success: true, categories: categoryList });
+        res.json({ success: true, categories: rows.map(r => r.category).filter(Boolean) });
     } catch (error) {
         console.error('Error fetching categories:', error);
         res.status(500).json({ success: false, error: 'Failed to fetch categories' });
+    }
+});
+
+// Create a new category (shared across menu items)
+router.post('/categories', async(req, res) => {
+    try {
+        const { name } = req.body || {};
+        const trimmed = (name || '').trim();
+        if (!trimmed) {
+            return res.status(400).json({ success: false, error: 'Category name is required' });
+        }
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS menu_categories (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL UNIQUE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+
+        await db.query('INSERT IGNORE INTO menu_categories (name) VALUES (?)', [trimmed]);
+        res.json({ success: true, name: trimmed });
+    } catch (error) {
+        console.error('Error creating category:', error);
+        res.status(500).json({ success: false, error: 'Failed to create category' });
+    }
+});
+
+// Delete a category if unused by any menu item
+router.delete('/categories/:name', async(req, res) => {
+    try {
+        const { name } = req.params;
+        const trimmed = (name || '').trim();
+        if (!trimmed) {
+            return res.status(400).json({ success: false, error: 'Category name is required' });
+        }
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS menu_categories (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL UNIQUE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+
+        const [cnt] = await db.query('SELECT COUNT(*) AS c FROM menu_items WHERE category = ?', [trimmed]);
+        if (cnt[0].c > 0) {
+            return res.status(409).json({ success: false, error: 'Category is in use by menu items' });
+        }
+
+        await db.query('DELETE FROM menu_categories WHERE name = ?', [trimmed]);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting category:', error);
+        res.status(500).json({ success: false, error: 'Failed to delete category' });
     }
 });
 

@@ -55,6 +55,9 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
     cost: product?.cost || 0,
     visibleInPos: product?.visibleInPos !== undefined ? product.visibleInPos : true,
     visibleInCustomerMenu: product?.visibleInCustomerMenu !== undefined ? product.visibleInCustomerMenu : true,
+    allowCustomization: product?.allow_customization !== undefined
+      ? product.allow_customization
+      : (product?.is_customizable !== undefined ? product.is_customizable : true),
 
     addOns: product?.addOns || false,
     orderNotes: product?.orderNotes || false,
@@ -65,6 +68,10 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
   const [newVariant, setNewVariant] = useState({ name: '', price: 0, cost: 0 });
   const [ingredientOptions, setIngredientOptions] = useState<IngredientOption[]>([]);
   const [recipe, setRecipe] = useState<RecipeRow[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [showNewCategory, setShowNewCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
@@ -99,6 +106,56 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
     }
   }, [product]);
 
+  useEffect(() => {
+    // Load categories from backend so they are shared globally
+    const loadCategories = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/menu/categories`);
+        const data = await res.json();
+        if (data.success) setCategories(data.categories || []);
+      } catch (_) {}
+    };
+    loadCategories();
+  }, []);
+
+  const addCustomCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) return;
+    try {
+      const res = await fetch(`${API_URL}/api/menu/categories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCategories(prev => (prev.includes(name) ? prev : [...prev, name]));
+        setFormData(prev => ({ ...prev, category: name }));
+      }
+    } catch (_) {}
+    setShowNewCategory(false);
+    setNewCategoryName('');
+  };
+
+  const deleteCategory = async (name: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/menu/categories/${encodeURIComponent(name)}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCategories(prev => prev.filter(c => c !== name));
+        if (formData.category === name) {
+          setFormData(prev => ({ ...prev, category: '' }));
+        }
+      } else {
+        alert(data.error || 'Cannot delete category');
+      }
+    } catch (e) {
+      alert('Failed to delete category');
+    }
+  };
+
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -110,6 +167,7 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
       const response = await fetch(`${API_URL}/api/upload/menu-image`, {
         method: 'POST',
         body: uploadFormData,
+        credentials: 'include',
       });
 
       if (response.ok) {
@@ -117,8 +175,9 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
         // Store the full versions object for responsive images
         setFormData(prev => ({ ...prev, image_url: result.versions }));
       } else {
-        console.error('Failed to upload image');
-        alert('Failed to upload image. Please try again.');
+        const errorData = await response.json();
+        console.error('Failed to upload image:', errorData);
+        alert(`Failed to upload image: ${errorData.error || 'Please try again.'}`);
       }
     } catch (error) {
       console.error('Error uploading image:', error);
@@ -145,6 +204,7 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
       cost: parseFloat(formData.cost.toString()),
       visibleInPos: formData.visibleInPos,
       visibleInCustomerMenu: formData.visibleInCustomerMenu,
+      allow_customization: formData.allowCustomization,
 
       addOns: formData.addOns,
       orderNotes: formData.orderNotes,
@@ -226,7 +286,7 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
             <div className="space-y-6">
             {/* Step 1: Basic Information & Image */}
               <Card>
-                <CardHeader className="pb-3">
+                <CardHeader className="pb-5">
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Package className="w-5 h-5 text-blue-500" />
                   Step 1: Basic Information & Image
@@ -238,7 +298,7 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
                   <div className="lg:col-span-2 space-y-4">
                                          {/* Image Upload Section */}
                   <div>
-                       <Label htmlFor="image">Product Image *</Label>
+                    <Label htmlFor="image" className="mb-2 block">Product Image *</Label>
                        <div className="mt-2 space-y-2">
                          <Input
                            id="image"
@@ -256,7 +316,7 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
                       <div className="space-y-3">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="w-full">
-                    <Label htmlFor="name">Product Name *</Label>
+                    <Label htmlFor="name" className="mb-2 block">Product Name *</Label>
                     <Input
                       id="name"
                       value={formData.name}
@@ -268,7 +328,7 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
                   </div>
                   
                           <div className="w-full">
-                    <Label htmlFor="category">Category *</Label>
+                    <Label htmlFor="category" className="mb-2 block">Category *</Label>
                     <Select
                       value={formData.category}
                       onValueChange={(value: string) => setFormData(prev => ({ ...prev, category: value }))}
@@ -277,18 +337,44 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
                         <SelectValue placeholder="Select category" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Basic Coffee">Basic Coffee</SelectItem>
-                        <SelectItem value="Specialty Coffee">Specialty Coffee</SelectItem>
-                        <SelectItem value="Tea">Tea</SelectItem>
-                        <SelectItem value="Non-Coffee">Non-Coffee</SelectItem>
-                        <SelectItem value="Food">Food</SelectItem>
+                        {categories.map((c) => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
+                    <div className="mt-2 flex items-center gap-3 flex-nowrap">
+                      {!showNewCategory ? (
+                        <button
+                          type="button"
+                          className="text-xs text-blue-600 hover:underline whitespace-nowrap"
+                          onClick={() => setShowNewCategory(true)}
+                        >
+                          + Add new category
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Input
+                            placeholder="Enter new category"
+                            value={newCategoryName}
+                            onChange={(e) => setNewCategoryName(e.target.value)}
+                          />
+                          <Button type="button" size="sm" onClick={addCustomCategory}>Save</Button>
+                          <Button type="button" size="sm" variant="outline" onClick={() => { setShowNewCategory(false); setNewCategoryName(''); }}>Cancel</Button>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        className="text-xs text-gray-600 hover:underline whitespace-nowrap"
+                        onClick={() => setShowCategoryManager(true)}
+                      >
+                        Manage categories
+                      </button>
+                    </div>
                           </div>
                   </div>
 
                   <div>
-                    <Label htmlFor="description">Description</Label>
+                    <Label htmlFor="description" className="mb-2 block">Description</Label>
                     <Textarea
                       id="description"
                       value={formData.description}
@@ -344,21 +430,22 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
 
             {/* Step 2: Pricing */}
               <Card>
-                <CardHeader className="pb-3">
+                <CardHeader className="pb-5">
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Calculator className="w-5 h-5 text-purple-500" />
                   Step 2: Pricing
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <Label htmlFor="sellingPrice">Selling Price *</Label>
+                      <Label htmlFor="sellingPrice" className="mb-2 block">Selling Price *</Label>
                       <Input
                         id="sellingPrice"
                         type="number"
-                        value={formData.sellingPrice}
-                        onChange={(e) => setFormData(prev => ({ ...prev, sellingPrice: parseFloat(e.target.value) || 0 }))}
+                        placeholder="Enter price"
+                        value={formData.sellingPrice === 0 ? '' : formData.sellingPrice}
+                        onChange={(e) => setFormData(prev => ({ ...prev, sellingPrice: e.target.value === '' ? 0 : (parseFloat(e.target.value) || 0) }))}
                         min="0"
                         step="0.01"
                         required
@@ -366,12 +453,13 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
                     </div>
                     
                     <div>
-                      <Label htmlFor="cost">Cost</Label>
+                      <Label htmlFor="cost" className="mb-2 block">Cost</Label>
                       <Input
                         id="cost"
                         type="number"
-                        value={formData.cost}
-                        onChange={(e) => setFormData(prev => ({ ...prev, cost: parseFloat(e.target.value) || 0 }))}
+                        placeholder="Enter cost"
+                        value={formData.cost === 0 ? '' : formData.cost}
+                        onChange={(e) => setFormData(prev => ({ ...prev, cost: e.target.value === '' ? 0 : (parseFloat(e.target.value) || 0) }))}
                         min="0"
                         step="0.01"
                       />
@@ -382,7 +470,7 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
 
             {/* Step 3: Visibility Settings */}
               <Card>
-                <CardHeader className="pb-3">
+                <CardHeader className="pb-5">
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Settings className="w-5 h-5 text-orange-500" />
                   Step 3: Visibility Settings
@@ -413,6 +501,18 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
                     />
                     <Label htmlFor="visibleInCustomerMenu">Visible in Customer Menu</Label>
                   </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="allowCustomization"
+                      checked={formData.allowCustomization}
+                      onChange={(e) => setFormData(prev => ({ ...prev, allowCustomization: e.target.checked }))}
+                      className="rounded"
+                      aria-label="Allow customization"
+                    />
+                    <Label htmlFor="allowCustomization">Allow customization</Label>
+                  </div>
                   </div>
                 </CardContent>
               </Card>
@@ -435,8 +535,8 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
                     <Input
                       type="number"
                       placeholder="Price"
-                      value={newVariant.price}
-                      onChange={(e) => setNewVariant(prev => ({ ...prev, price: parseFloat(e.target.value) || 0 }))}
+                      value={newVariant.price === 0 ? '' : newVariant.price}
+                      onChange={(e) => setNewVariant(prev => ({ ...prev, price: e.target.value === '' ? 0 : (parseFloat(e.target.value) || 0) }))}
                       min="0"
                       step="0.01"
                     />
@@ -478,7 +578,7 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
                   Define ingredients and quantities. The system will automatically convert units and deduct from inventory.
                 </p>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-6">
                 <div className="flex items-center justify-between">
                   <Button 
                     type="button" 
@@ -496,7 +596,7 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
                   {recipe.length > 0 && (
                   <div className="space-y-0">
                     {/* Header Row */}
-                    <div className="grid grid-cols-5 gap-4 bg-gradient-to-r from-gray-100 to-gray-50 px-4 py-3 rounded-t-lg border-b-2 border-gray-200">
+                    <div className="grid grid-cols-5 gap-6 bg-gradient-to-r from-gray-100 to-gray-50 px-4 py-3 rounded-t-lg border-b-2 border-gray-200">
                       <div className="font-semibold text-gray-800 text-sm uppercase tracking-wide">Ingredient</div>
                       <div className="font-semibold text-gray-800 text-sm uppercase tracking-wide">Amount</div>
                       <div className="font-semibold text-gray-800 text-sm uppercase tracking-wide">Unit</div>
@@ -508,10 +608,10 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
                     {recipe.map((row) => {
                       const selectedIngredient = ingredientOptions.find(i => i.id === row.ingredient_id);
                       return (
-                        <div key={row.id} className="grid grid-cols-5 gap-4 items-center p-4 bg-white border-b border-gray-100 hover:bg-gray-50 transition-colors duration-150 last:rounded-b-lg">
+                        <div key={row.id} className="grid grid-cols-5 gap-6 items-center p-4 bg-white border-b border-gray-100 hover:bg-gray-50 transition-colors duration-150 last:rounded-b-lg">
                           <div className="flex items-center">
                           <Select
-                            value={row.ingredient_id.toString()}
+                            value={row.ingredient_id && row.ingredient_id > 0 ? row.ingredient_id.toString() : ''}
                               onValueChange={(value: string) => {
                                 const ingredientId = parseInt(value);
                                 if (!isNaN(ingredientId)) {
@@ -522,7 +622,7 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
                               }}
                             >
                               <SelectTrigger className="h-10 w-full">
-                                <SelectValue placeholder="Select Ingredient" />
+                                <SelectValue placeholder="Select ingredient" />
                             </SelectTrigger>
                             <SelectContent>
                               {ingredientOptions.map((ingredient) => (
@@ -537,13 +637,17 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
                           <div className="flex items-center">
                           <Input
                             type="number"
-                              placeholder="0"
-                            value={row.amount}
-                            onChange={(e) => updateRecipeRow(row.id, { amount: parseFloat(e.target.value) || 0 })}
-                              className="h-10 w-full"
-                              min="0"
-                              step="0.01"
-                            />
+                            placeholder="Amount"
+                            value={row.amount ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const num = parseFloat(val);
+                              updateRecipeRow(row.id, { amount: val === '' || isNaN(num) ? (undefined as unknown as number) : num });
+                            }}
+                            className="h-10 w-full"
+                            min="0"
+                            step="0.01"
+                          />
                           </div>
                           
                           <div className="relative flex items-center">
@@ -601,13 +705,17 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
                           </div>
                           
                           {/* Extra Pricing (per unit) */}
-                          <div className="col-span-5 grid grid-cols-1 md:grid-cols-3 gap-3 mt-3 bg-gray-50 rounded p-3 border border-gray-100">
+                          <div className="col-span-5 grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 bg-gray-50 rounded p-3 border border-gray-100">
                             <div>
                               <Label className="text-xs text-gray-600">Extra price per unit (₱ / unit)</Label>
                               <Input
                                 type="number"
-                                value={row.extra_price_per_unit || 0}
-                                onChange={(e) => updateRecipeRow(row.id, { extra_price_per_unit: parseFloat(e.target.value) || 0 })}
+                                value={row.extra_price_per_unit ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  const num = parseFloat(val);
+                                  updateRecipeRow(row.id, { extra_price_per_unit: val === '' || isNaN(num) ? (undefined as unknown as number) : num });
+                                }}
                                 min="0"
                                 step="0.01"
                                 placeholder="e.g., 0.50"
@@ -680,6 +788,28 @@ const ProductDetailsForm: React.FC<ProductDetailsFormProps> = ({ product, onSave
           </div>
         </form>
       </div>
+    
+    {showCategoryManager && (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg w-full max-w-md p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold">Manage Categories</h3>
+            <Button size="sm" variant="outline" onClick={() => setShowCategoryManager(false)}>Close</Button>
+          </div>
+          <div className="space-y-2 max-h-72 overflow-auto">
+            {categories.map((c) => (
+              <div key={c} className="flex items-center justify-between border rounded px-2 py-1">
+                <span>{c}</span>
+                <Button size="sm" variant="outline" onClick={() => deleteCategory(c)}>Delete</Button>
+              </div>
+            ))}
+            {categories.length === 0 && (
+              <div className="text-sm text-gray-500">No categories</div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
     </div>
   );
 };

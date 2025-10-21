@@ -1,6 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
+
+// Generate unique claim code
+function generateClaimCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 8; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
 const qrService = require('../services/qrService');
 const { ensureAuthenticated } = require('../middleware/authMiddleware');
 const { ensureStaffAuthenticated } = require('../middleware/staffAuthMiddleware');
@@ -200,13 +210,8 @@ router.post('/redeem-reward', async(req, res) => {
 
         const reward = rewards[0];
 
-        // Check if reward requires an order
-        if (reward.requires_order && !orderId) {
-            return res.status(400).json({
-                success: false,
-                error: 'This reward must be redeemed with an order'
-            });
-        }
+        // Note: Order requirement removed - rewards can be claimed independently
+        // The system already has proper safeguards (one-time claim limit, 20-minute expiration)
 
         // Check minimum points requirement
         const minimumPoints = parseInt(settingsObj.minimum_points_redemption || '10');
@@ -226,7 +231,26 @@ router.post('/redeem-reward', async(req, res) => {
             return res.status(404).json({ success: false, error: 'Customer not found' });
         }
 
-        const currentPoints = customers[0].loyalty_points;
+        let currentPoints = customers[0].loyalty_points || 0;
+
+        // Fallback-derived balance if stored points are zero/stale
+        if (!currentPoints) {
+            const [txnAgg] = await db.query(`
+                SELECT 
+                    COALESCE(SUM(points_earned), 0) AS earned,
+                    COALESCE(SUM(points_redeemed), 0) AS redeemed
+                FROM loyalty_transactions 
+                WHERE customer_id = ?
+            `, [customerId]);
+            currentPoints = Math.max(0, ((txnAgg[0] && txnAgg[0].earned) || 0) - ((txnAgg[0] && txnAgg[0].redeemed) || 0));
+            if (!currentPoints) {
+                const [orderAgg] = await db.query(`
+                    SELECT COALESCE(SUM(total_price), 0) AS total_paid
+                    FROM orders WHERE customer_id = ? AND payment_status = 'paid'
+                `, [customerId]);
+                currentPoints = Math.max(0, Math.floor((orderAgg[0] && orderAgg[0].total_paid) || 0) - (((txnAgg[0] && txnAgg[0].redeemed) || 0)));
+            }
+        }
 
         if (currentPoints < reward.points_required) {
             return res.status(400).json({
@@ -237,12 +261,11 @@ router.post('/redeem-reward', async(req, res) => {
             });
         }
 
-        // Check if customer has already redeemed this reward type recently
+        // Check if customer has already redeemed this reward type (1 per customer rule)
         const [existingRedemptions] = await db.query(`
             SELECT COUNT(*) as count FROM loyalty_reward_redemptions 
             WHERE customer_id = ? AND reward_id = ? AND status IN ('pending', 'completed')
-            AND redemption_date >= DATE_SUB(NOW(), INTERVAL ? DAY)
-        `, [customerId, rewardId, reward.validity_days]);
+        `, [customerId, rewardId]);
 
         if (existingRedemptions[0].count >= reward.max_redemptions_per_customer) {
             return res.status(400).json({
@@ -251,23 +274,27 @@ router.post('/redeem-reward', async(req, res) => {
             });
         }
 
+        // Generate unique claim code
+        const claimCode = generateClaimCode();
+
         // Create reward redemption record with 20-minute expiration
         const expirationTime = new Date(Date.now() + 20 * 60 * 1000); // 20 minutes from now
 
         const [redemptionResult] = await db.query(`
             INSERT INTO loyalty_reward_redemptions 
-            (customer_id, reward_id, order_id, points_redeemed, redemption_proof, staff_id, status, expires_at) 
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
-        `, [customerId, rewardId, orderId, reward.points_required, redemptionProof, staffId || null, expirationTime]);
+            (customer_id, reward_id, order_id, points_redeemed, redemption_proof, staff_id, status, expires_at, claim_code) 
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        `, [customerId, rewardId, orderId, reward.points_required, redemptionProof, staffId || null, expirationTime, claimCode]);
 
         const redemptionId = redemptionResult.insertId;
 
-        // Deduct points from customer
+        // Deduct points from effective balance to keep DB in sync
+        const newBalance = Math.max(0, currentPoints - reward.points_required);
         await db.query(`
             UPDATE customers 
-            SET loyalty_points = loyalty_points - ? 
+            SET loyalty_points = ? 
             WHERE id = ?
-        `, [reward.points_required, customerId]);
+        `, [newBalance, customerId]);
 
         // Record loyalty transaction
         await db.query(`
@@ -293,12 +320,13 @@ router.post('/redeem-reward', async(req, res) => {
             redemptionId,
             rewardName: reward.name,
             pointsRedeemed: reward.points_required,
-            newBalance: updatedCustomers[0].loyalty_points,
+            newBalance: newBalance,
             message: `Successfully redeemed ${reward.name}!`,
             redemptionProof,
             status: 'pending',
             expiresAt: expirationTime,
             expiresInMinutes: 20,
+            claimCode: claimCode,
             nextSteps: 'Staff will confirm your reward usage when you claim it. Claim expires in 20 minutes.'
         });
     } catch (error) {
@@ -312,31 +340,35 @@ router.post('/confirm-reward-usage', async(req, res) => {
     try {
         const { redemptionId, staffId, usageType, menuItemId, discountAmount, confirmationNotes } = req.body;
 
-        // Validate required fields
-        if (!redemptionId || !staffId || !usageType) {
+        if (!redemptionId || !usageType) {
             return res.status(400).json({
                 success: false,
-                error: 'Missing required fields: redemptionId, staffId, usageType'
+                error: 'Missing required fields: redemptionId, usageType'
             });
         }
 
-        // Verify staff member
-        console.log('Checking staff member with ID:', staffId);
-        const [staff] = await db.query(`
-            SELECT id, full_name FROM users WHERE id = ? AND role IN ('staff', 'manager', 'admin')
-        `, [staffId]);
-
-        if (staff.length === 0) {
-            console.log('Staff member not found or unauthorized. Available staff:');
-            const [allStaff] = await db.query(`
-                SELECT id, username, role FROM users WHERE role IN ('staff', 'manager', 'admin')
-            `);
-            allStaff.forEach(s => console.log(`  - ID: ${s.id}, Username: ${s.username}, Role: ${s.role}`));
-
-            return res.status(403).json({ success: false, error: 'Unauthorized staff member' });
+        // Resolve staff/admin identity (accept staff or admin)
+        let effectiveStaffId = staffId || (req.session && req.session.staffUser && req.session.staffUser.id) || (req.session && req.session.adminUser && req.session.adminUser.id) || null;
+        let staffDisplayName = 'staff';
+        if (effectiveStaffId) {
+            try {
+                const [staffRows] = await db.query(`
+                    SELECT id, full_name FROM users WHERE id = ? AND role IN ('staff','manager','admin')
+                `, [effectiveStaffId]);
+                if (staffRows && staffRows.length > 0) {
+                    staffDisplayName = staffRows[0].full_name || 'staff';
+                } else {
+                    const [adminRows] = await db.query(`
+                        SELECT id, full_name FROM admins WHERE id = ?
+                    `, [effectiveStaffId]);
+                    if (adminRows && adminRows.length > 0) {
+                        staffDisplayName = adminRows[0].full_name || 'admin';
+                    }
+                }
+            } catch (e) {
+                // ignore lookup error; proceed with generic name
+            }
         }
-
-        console.log('Staff member authorized:', staff[0]);
 
         // Get redemption details
         const [redemptions] = await db.query(`
@@ -354,19 +386,34 @@ router.post('/confirm-reward-usage', async(req, res) => {
         await connection.beginTransaction();
 
         try {
+            // If expired, mark expired and return
+            if (new Date(redemption.expires_at) < new Date()) {
+                await connection.query(`
+                    UPDATE loyalty_reward_redemptions 
+                    SET status = 'expired', updated_at = NOW() 
+                    WHERE id = ?
+                `, [redemptionId]);
+                await connection.commit();
+                return res.status(400).json({ success: false, error: 'Redemption has expired' });
+            }
+
             // Update redemption status to completed
             await connection.query(`
                 UPDATE loyalty_reward_redemptions 
-                SET status = 'completed', notes = ?, updated_at = NOW() 
+                SET status = 'completed', notes = ?, staff_id = ? 
                 WHERE id = ?
-            `, [confirmationNotes || 'Reward usage confirmed by staff', redemptionId]);
+            `, [confirmationNotes || `Confirmed by ${staffDisplayName}`, effectiveStaffId || null, redemptionId]);
 
-            // Log the usage
-            await connection.query(`
-                INSERT INTO loyalty_reward_usage_log 
-                (redemption_id, usage_type, menu_item_id, discount_amount, staff_confirmation_id, confirmation_notes) 
-                VALUES (?, ?, ?, ?, ?, ?)
-            `, [redemptionId, usageType, menuItemId, discountAmount, staffId, confirmationNotes]);
+            // Try to log the usage (best-effort)
+            try {
+                await connection.query(`
+                    INSERT INTO loyalty_reward_usage_log 
+                    (redemption_id, usage_type, menu_item_id, discount_amount, staff_confirmation_id, confirmation_notes) 
+                    VALUES (?, ?, ?, ?, ?, ?)
+                `, [redemptionId, usageType, menuItemId || null, discountAmount || null, effectiveStaffId || null, confirmationNotes || `Confirmed by ${staffDisplayName}`]);
+            } catch (logErr) {
+                console.warn('loyalty_reward_usage_log insert failed (non-fatal):', logErr && logErr.message ? logErr.message : logErr);
+            }
 
             await connection.commit();
 
@@ -374,9 +421,9 @@ router.post('/confirm-reward-usage', async(req, res) => {
                 success: true,
                 message: 'Reward usage confirmed successfully',
                 redemptionId,
-                confirmedBy: staff[0].full_name,
+                confirmedBy: staffDisplayName,
                 usageType,
-                confirmationNotes
+                confirmationNotes: confirmationNotes || `Confirmed by ${staffDisplayName}`
             });
         } catch (error) {
             await connection.rollback();
@@ -404,19 +451,37 @@ router.get('/available-rewards/:customerId', async(req, res) => {
             return res.status(404).json({ success: false, error: 'Customer not found' });
         }
 
-        const currentPoints = customers[0].loyalty_points;
+        let currentPoints = customers[0].loyalty_points || 0;
+
+        // Fallback if points not stored yet: derive from transactions or orders
+        if (!currentPoints) {
+            const [txnAgg] = await db.query(`
+                SELECT 
+                    COALESCE(SUM(points_earned), 0) AS earned,
+                    COALESCE(SUM(points_redeemed), 0) AS redeemed
+                FROM loyalty_transactions 
+                WHERE customer_id = ?
+            `, [customerId]);
+            currentPoints = Math.max(0, ((txnAgg[0] && txnAgg[0].earned) || 0) - ((txnAgg[0] && txnAgg[0].redeemed) || 0));
+            if (!currentPoints) {
+                const [orderAgg] = await db.query(`
+                    SELECT COALESCE(SUM(total_price), 0) AS total_paid
+                    FROM orders WHERE customer_id = ? AND payment_status = 'paid'
+                `, [customerId]);
+                currentPoints = Math.max(0, Math.floor((orderAgg[0] && orderAgg[0].total_paid) || 0) - (((txnAgg[0] && txnAgg[0].redeemed) || 0)));
+            }
+        }
 
         // Get all active rewards
         const [rewards] = await db.query(`
             SELECT * FROM loyalty_rewards WHERE is_active = TRUE ORDER BY points_required ASC
         `, []);
 
-        // Get customer's recent redemptions to check limits
+        // Get customer's redemptions to check limits (1 per customer rule)
         const [recentRedemptions] = await db.query(`
             SELECT reward_id, COUNT(*) as redemption_count 
             FROM loyalty_reward_redemptions 
             WHERE customer_id = ? AND status IN ('pending', 'completed')
-            AND redemption_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)
             GROUP BY reward_id
         `, [customerId]);
 
@@ -887,6 +952,300 @@ router.get('/admin/claimed-rewards', async(req, res) => {
             success: false,
             error: 'Failed to fetch claimed rewards'
         });
+    }
+});
+
+// Staff: Search redemption by claim code
+router.get('/staff/search/:claimCode', async(req, res) => {
+    try {
+        // allow staff or admin sessions
+        const isStaff = (req.session && req.session.staffUser);
+        const isAdmin = (req.session && (req.session.adminUser || req.session.admin));
+        if (!isStaff && !isAdmin) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+
+        const { claimCode } = req.params;
+
+        const [redemptions] = await db.query(`
+            SELECT 
+                lrr.id,
+                lrr.customer_id,
+                lrr.reward_id,
+                lrr.claim_code,
+                lrr.points_redeemed,
+                lrr.redemption_date,
+                lrr.status,
+                lrr.expires_at,
+                c.full_name as customer_name,
+                c.email as customer_email,
+                lr.name as reward_name,
+                lr.reward_type as reward_type
+            FROM loyalty_reward_redemptions lrr
+            JOIN customers c ON lrr.customer_id = c.id
+            JOIN loyalty_rewards lr ON lrr.reward_id = lr.id
+            WHERE lrr.claim_code = ?
+        `, [claimCode]);
+
+        if (redemptions.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Redemption not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            redemption: redemptions[0]
+        });
+    } catch (error) {
+        console.error('Error searching redemption:', error);
+        res.status(500).json({ success: false, error: 'Failed to search redemption' });
+    }
+});
+
+// Staff: Get pending redemptions
+router.get('/staff/pending', async(req, res) => {
+    try {
+        // allow staff or admin sessions
+        const isStaff = (req.session && req.session.staffUser);
+        const isAdmin = (req.session && (req.session.adminUser || req.session.admin));
+        if (!isStaff && !isAdmin) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+
+        const [redemptions] = await db.query(`
+            SELECT 
+                lrr.id,
+                lrr.customer_id,
+                lrr.reward_id,
+                lrr.claim_code,
+                lrr.points_redeemed,
+                lrr.redemption_date,
+                lrr.status,
+                lrr.expires_at,
+                c.full_name as customer_name,
+                c.email as customer_email,
+                lr.name as reward_name,
+                lr.reward_type as reward_type
+            FROM loyalty_reward_redemptions lrr
+            JOIN customers c ON lrr.customer_id = c.id
+            JOIN loyalty_rewards lr ON lrr.reward_id = lr.id
+            WHERE lrr.status = 'pending'
+            ORDER BY lrr.redemption_date DESC
+        `);
+
+        res.json({
+            success: true,
+            redemptions
+        });
+    } catch (error) {
+        console.error('Error fetching pending redemptions:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch pending redemptions' });
+    }
+});
+
+// Staff: Process redemption (complete or cancel)
+router.post('/staff/:redemptionId/:action', ensureStaffAuthenticated, async(req, res) => {
+    try {
+        const { redemptionId, action } = req.params;
+        const staffId = req.user.id;
+
+        if (!['complete', 'cancel'].includes(action)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid action. Must be "complete" or "cancel"'
+            });
+        }
+
+        // Get redemption details
+        const [redemptions] = await db.query(`
+            SELECT * FROM loyalty_reward_redemptions WHERE id = ?
+        `, [redemptionId]);
+
+        if (redemptions.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Redemption not found'
+            });
+        }
+
+        const redemption = redemptions[0];
+
+        // Check if redemption is still pending
+        if (redemption.status !== 'pending') {
+            return res.status(400).json({
+                success: false,
+                error: 'Redemption is not pending'
+            });
+        }
+
+        // Check if redemption has expired
+        if (new Date(redemption.expires_at) < new Date()) {
+            // Auto-expire the redemption
+            await db.query(`
+                UPDATE loyalty_reward_redemptions 
+                SET status = 'expired', staff_id = ? 
+                WHERE id = ?
+            `, [staffId, redemptionId]);
+
+            return res.status(400).json({
+                success: false,
+                error: 'Redemption has expired'
+            });
+        }
+
+        const newStatus = action === 'complete' ? 'completed' : 'cancelled';
+
+        // Update redemption status
+        await db.query(`
+            UPDATE loyalty_reward_redemptions 
+            SET status = ?, staff_id = ?, processed_at = NOW() 
+            WHERE id = ?
+        `, [newStatus, staffId, redemptionId]);
+
+        // If cancelled, refund the points
+        if (action === 'cancel') {
+            await db.query(`
+                UPDATE customers 
+                SET loyalty_points = loyalty_points + ? 
+                WHERE id = ?
+            `, [redemption.points_redeemed, redemption.customer_id]);
+
+            // Record refund transaction
+            await db.query(`
+                INSERT INTO loyalty_transactions 
+                (customer_id, points_earned, transaction_type, description, redemption_id) 
+                VALUES (?, ?, 'refund', ?, ?)
+            `, [
+                redemption.customer_id,
+                redemption.points_redeemed,
+                `Refunded ${redemption.points_redeemed} points for cancelled reward redemption`,
+                redemptionId
+            ]);
+        }
+
+        res.json({
+            success: true,
+            message: `Redemption ${action === 'complete' ? 'completed' : 'cancelled'} successfully`
+        });
+    } catch (error) {
+        console.error('Error processing redemption:', error);
+        res.status(500).json({ success: false, error: 'Failed to process redemption' });
+    }
+});
+
+// Compatibility aliases for staff reward processing UI
+router.get('/staff/reward-redemptions/search/:claimCode', async(req, res) => {
+    // Delegate to the same logic as staff search
+    req.params.claimCode = req.params.claimCode;
+    try {
+        const isStaff = (req.session && req.session.staffUser);
+        const isAdmin = (req.session && (req.session.adminUser || req.session.admin));
+        if (!isStaff && !isAdmin) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+        const { claimCode } = req.params;
+        const [rows] = await db.query(`
+            SELECT 
+                lrr.id,
+                lrr.customer_id,
+                lrr.reward_id,
+                lrr.claim_code,
+                lrr.points_redeemed,
+                lrr.redemption_date,
+                lrr.status,
+                lrr.expires_at,
+                c.full_name as customer_name,
+                c.email as customer_email,
+                lr.name as reward_name,
+                lr.reward_type as reward_type
+            FROM loyalty_reward_redemptions lrr
+            JOIN customers c ON lrr.customer_id = c.id
+            JOIN loyalty_rewards lr ON lrr.reward_id = lr.id
+            WHERE lrr.claim_code = ?
+        `, [claimCode]);
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Redemption not found' });
+        }
+        return res.json({ success: true, redemption: rows[0] });
+    } catch (err) {
+        console.error('Alias staff search error:', err);
+        return res.status(500).json({ success: false, error: 'Failed to search redemption' });
+    }
+});
+
+router.get('/staff/reward-redemptions/pending', async(req, res) => {
+    try {
+        const isStaff = (req.session && req.session.staffUser);
+        const isAdmin = (req.session && (req.session.adminUser || req.session.admin));
+        if (!isStaff && !isAdmin) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+        const [rows] = await db.query(`
+            SELECT 
+                lrr.id,
+                lrr.customer_id,
+                lrr.reward_id,
+                lrr.claim_code,
+                lrr.points_redeemed,
+                lrr.redemption_date,
+                lrr.status,
+                lrr.expires_at,
+                c.full_name as customer_name,
+                c.email as customer_email,
+                lr.name as reward_name,
+                lr.reward_type as reward_type
+            FROM loyalty_reward_redemptions lrr
+            JOIN customers c ON lrr.customer_id = c.id
+            JOIN loyalty_rewards lr ON lrr.reward_id = lr.id
+            WHERE lrr.status = 'pending'
+            ORDER BY lrr.redemption_date DESC
+        `);
+        return res.json({ success: true, redemptions: rows });
+    } catch (err) {
+        console.error('Alias staff pending error:', err);
+        return res.status(500).json({ success: false, error: 'Failed to fetch pending redemptions' });
+    }
+});
+
+router.post('/staff/reward-redemptions/:redemptionId/:action', async(req, res) => {
+    try {
+        const isStaff = (req.session && req.session.staffUser);
+        const isAdmin = (req.session && (req.session.adminUser || req.session.admin));
+        if (!isStaff && !isAdmin) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+        const { redemptionId, action } = req.params;
+        const staffId = (req.session && req.session.staffUser && req.session.staffUser.id) || (req.session && req.session.adminUser && req.session.adminUser.id) || null;
+        if (!['complete', 'cancel'].includes(action)) {
+            return res.status(400).json({ success: false, error: 'Invalid action' });
+        }
+        const [redemptions] = await db.query('SELECT * FROM loyalty_reward_redemptions WHERE id = ?', [redemptionId]);
+        if (!redemptions || redemptions.length === 0) {
+            return res.status(404).json({ success: false, error: 'Redemption not found' });
+        }
+        const redemption = redemptions[0];
+        if (redemption.status !== 'pending') {
+            return res.status(400).json({ success: false, error: 'Redemption is not pending' });
+        }
+        await db.query(`
+            UPDATE loyalty_reward_redemptions 
+            SET status = ?, staff_id = ?, processed_at = NOW() 
+            WHERE id = ?
+        `, [action === 'complete' ? 'completed' : 'cancelled', staffId, redemptionId]);
+        if (action === 'cancel') {
+            await db.query('UPDATE customers SET loyalty_points = loyalty_points + ? WHERE id = ?', [redemption.points_redeemed, redemption.customer_id]);
+            await db.query(`
+                INSERT INTO loyalty_transactions 
+                (customer_id, points_earned, transaction_type, description, redemption_id) 
+                VALUES (?, ?, 'refund', ?, ?)
+            `, [redemption.customer_id, redemption.points_redeemed, `Refunded ${redemption.points_redeemed} points for cancelled reward redemption`, redemptionId]);
+        }
+        return res.json({ success: true });
+    } catch (err) {
+        console.error('Alias staff process error:', err);
+        return res.status(500).json({ success: false, error: 'Failed to process redemption' });
     }
 });
 

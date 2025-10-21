@@ -9,7 +9,6 @@ import {
   AlertCircle, 
   Table,
   User,
-  DollarSign,
   RefreshCw
 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -66,7 +65,7 @@ const OrderQueue: React.FC<OrderQueueProps> = ({ orders, onStatusUpdate, onRefre
     const color = status === 'paid' ? 'bg-green-500' : status === 'failed' ? 'bg-red-500' : 'bg-yellow-500';
     return (
       <Badge className={`${color} text-white`}>
-        <DollarSign className="w-3 h-3 mr-1" />
+        <span className="text-xs font-bold mr-1">₱</span>
         {status.charAt(0).toUpperCase() + status.slice(1)}
       </Badge>
     );

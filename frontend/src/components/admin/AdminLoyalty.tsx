@@ -6,32 +6,18 @@ import {
   Plus, 
   Edit, 
   Trash, 
-  ToggleLeft, 
-  ToggleRight,
   RefreshCw,
   Search,
   Award,
   Coins,
-  Calendar,
   Star
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { io, Socket } from 'socket.io-client';
 import StaffRewardProcessing from '../staff/StaffRewardProcessing';
 
-interface LoyaltySettings {
-  points_per_peso: { value: string; description: string; updated_at: string };
-  minimum_points_redemption: { value: string; description: string; updated_at: string };
-  loyalty_enabled: { value: string; description: string; updated_at: string };
-  rewards_enabled: { value: string; description: string; updated_at: string };
-  double_points_days: { value: string; description: string; updated_at: string };
-  welcome_points: { value: string; description: string; updated_at: string };
-  welcome_points_enabled: { value: string; description: string; updated_at: string };
-  points_expiry_months: { value: string; description: string; updated_at: string };
-}
 
 interface LoyaltyReward {
   id: number;
@@ -85,7 +71,7 @@ interface LoyaltyStats {
 }
 
 const AdminLoyalty: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('rewards');
   const [rewards, setRewards] = useState<LoyaltyReward[]>([]);
   const [customers, setCustomers] = useState<CustomerLoyalty[]>([]);
   const [stats, setStats] = useState<LoyaltyStats | null>(null);
@@ -106,33 +92,9 @@ const AdminLoyalty: React.FC = () => {
     start_at: '',
     end_at: ''
   });
-  const [socket, setSocket] = useState<Socket | null>(null);
 
   useEffect(() => {
-    // Initialize Socket.IO connection
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-    const newSocket = io(API_URL);
-    setSocket(newSocket);
-
-    // Join admin room for real-time updates
-    newSocket.emit('join-admin-room');
-
-    // Listen for real-time updates
-    newSocket.on('loyalty-updated', (data) => {
-      console.log('Loyalty updated in AdminLoyalty:', data);
-      fetchData();
-    });
-
-    newSocket.on('order-updated', (data) => {
-      console.log('Order updated in AdminLoyalty:', data);
-      fetchData();
-    });
-
     fetchData();
-
-    return () => {
-      newSocket.close();
-    };
   }, []);
 
   const fetchData = async () => {
@@ -329,13 +291,6 @@ const AdminLoyalty: React.FC = () => {
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Loyalty Program</h1>
           <p className="text-sm sm:text-base text-gray-600 mt-1">Manage customer rewards and loyalty points system</p>
         </div>
-        <Button 
-          onClick={fetchData}
-          className="bg-amber-600 hover:bg-amber-700 text-white shadow-lg"
-        >
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Refresh
-        </Button>
       </div>
 
         {/* Error/Success Messages */}
@@ -353,10 +308,6 @@ const AdminLoyalty: React.FC = () => {
         {/* Main Content */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="w-full flex flex-wrap items-center justify-start gap-1 bg-transparent p-0">
-            <TabsTrigger value="overview" className="px-3 py-1 text-sm font-medium rounded-full data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border hover:bg-gray-100">
-              <TrendingUp className="w-4 h-4 mr-2" />
-              Overview
-            </TabsTrigger>
             <TabsTrigger value="rewards" className="px-3 py-1 text-sm font-medium rounded-full data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border hover:bg-gray-100">
               <Gift className="w-4 h-4 mr-2" />
               Rewards
@@ -371,88 +322,6 @@ const AdminLoyalty: React.FC = () => {
             </TabsTrigger>
           </TabsList>
 
-          {/* Overview Tab */}
-          <TabsContent value="overview" className="space-y-6">
-            {stats && (
-              <>
-                {/* Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-6 hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1">
-                    <div className="flex items-center">
-                      <div className="p-3 bg-blue-100 rounded-xl">
-                        <Users className="h-8 w-8 text-blue-600" />
-                      </div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-600">Active Members</p>
-                        <p className="text-2xl font-bold text-gray-900">{stats.customers.active_members}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-6 hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1">
-                    <div className="flex items-center">
-                      <div className="p-3 bg-green-100 rounded-xl">
-                        <Coins className="h-8 w-8 text-green-600" />
-                      </div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-600">Total Points</p>
-                        <p className="text-2xl font-bold text-gray-900">{stats.customers.total_points.toLocaleString()}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-6 hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1">
-                    <div className="flex items-center">
-                      <div className="p-3 bg-purple-100 rounded-xl">
-                        <TrendingUp className="h-8 w-8 text-purple-600" />
-                      </div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-600">Avg Points</p>
-                        <p className="text-2xl font-bold text-gray-900">{Math.round(stats.customers.avg_points)}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-6 hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1">
-                    <div className="flex items-center">
-                      <div className="p-3 bg-orange-100 rounded-xl">
-                        <Award className="h-8 w-8 text-orange-600" />
-                      </div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-600">Transactions</p>
-                        <p className="text-2xl font-bold text-gray-900">{stats.transactions.total_transactions}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Top Customers */}
-                <div className="bg-white rounded-2xl shadow-xl border-2 border-gray-200 p-6">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Top Loyalty Members</h2>
-                  <div className="space-y-3">
-                    {stats.topCustomers.map((customer, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-white/50 rounded-lg">
-                        <div className="flex items-center">
-                          <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center mr-3">
-                            <Star className="w-4 h-4 text-amber-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900">{customer.full_name}</p>
-                            <p className="text-sm text-gray-600">
-                              Member since {new Date(customer.created_at).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-                        <Badge className="bg-amber-100 text-amber-800 border-amber-200">
-                          {customer.loyalty_points} points
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </TabsContent>
 
           
 

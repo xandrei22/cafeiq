@@ -177,12 +177,19 @@ const AdminActivityLogs: React.FC<AdminActivityLogsProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Refetch when filters/page/basePath change (without touching socket listeners)
+  // Refetch when server-side filters/page/basePath change (ignore text search)
   useEffect(() => {
     fetchActivityLogs();
     fetchStats();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, filters, basePath]);
+  }, [
+    currentPage,
+    basePath,
+    filters.user_type,
+    filters.action_type,
+    filters.start_date,
+    filters.end_date
+  ]);
 
   const handleFilterChange = (key: string, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));

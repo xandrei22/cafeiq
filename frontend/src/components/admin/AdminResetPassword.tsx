@@ -79,13 +79,13 @@ const AdminResetPassword: React.FC = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-white font-sans">
       <div className="bg-white p-8 rounded-2xl shadow-md w-full max-w-md border-0">
-        <h2 className="text-3xl font-bold mb-6 text-center text-[#6B5B5B]">Reset Password</h2>
+        <h2 className="text-3xl font-bold mb-6 text-center text-[#3F3532]">Reset Password</h2>
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Password field with always-visible eye icon */}
           <div className="relative">
             <input
               type={showPassword ? 'text' : 'password'}
-              className="w-full px-4 py-3 bg-gray-100 border-0 rounded-none focus:bg-white focus:ring-1 focus:ring-[#6B5B5B] text-gray-900 pr-12"
+              className="w-full px-4 py-3 bg-gray-100 border-0 rounded-none focus:bg-white focus:ring-1 focus:ring-[#a87437] text-gray-900 pr-12"
               placeholder="New password"
               value={password}
               onChange={e => setPassword(e.target.value)}
@@ -93,7 +93,7 @@ const AdminResetPassword: React.FC = () => {
             />
             <button
               type="button"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-[#6B5B5B] focus:outline-none"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-[#a87437] focus:outline-none"
               onClick={() => setShowPassword(!showPassword)}
             >
               {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -114,7 +114,7 @@ const AdminResetPassword: React.FC = () => {
           <div className="relative">
             <input
               type={showConfirm ? 'text' : 'password'}
-              className="w-full px-4 py-3 bg-gray-100 border-0 rounded-none focus:bg-white focus:ring-1 focus:ring-[#6B5B5B] text-gray-900 pr-12"
+              className="w-full px-4 py-3 bg-gray-100 border-0 rounded-none focus:bg-white focus:ring-1 focus:ring-[#a87437] text-gray-900 pr-12"
               placeholder="Confirm new password"
               value={confirm}
               onChange={e => setConfirm(e.target.value)}
@@ -122,7 +122,7 @@ const AdminResetPassword: React.FC = () => {
             />
             <button
               type="button"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-[#6B5B5B] focus:outline-none"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-[#a87437] focus:outline-none"
               onClick={() => setShowConfirm(!showConfirm)}
             >
               {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -135,7 +135,7 @@ const AdminResetPassword: React.FC = () => {
               {passwordsMatch ? 'Passwords match!' : 'Passwords do not match'}
             </div>
           )}
-          <button type="submit" className="w-full bg-[#6B5B5B] hover:bg-[#5A4A4A] text-white py-3 rounded-full font-medium transition">Reset Password</button>
+          <button type="submit" className="w-full bg-[#a87437] hover:bg-[#946a33] text-white py-3 rounded-full font-medium transition">Reset Password</button>
         </form>
         {status !== 'idle' && (
           <div className={`mt-4 text-center ${status === 'success' ? 'text-green-600' : 'text-red-600'}`}>{message}</div>

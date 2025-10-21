@@ -20,6 +20,11 @@ import CustomerForgotPassword from "./components/customer/CustomerForgotPassword
 import CustomerResetPassword from "./components/customer/CustomerResetPassword";
 import CustomerPayment from "./components/customer/CustomerPayment";
 import CustomerPaymentQR from "./components/customer/CustomerPaymentQR";
+import GuestMenu from "./components/customer/GuestMenu";
+import GuestOrderTracking from "./components/customer/GuestOrderTracking";
+import GuestOrderSuccess from "./components/customer/GuestOrderSuccess";
+import QRCodeGenerator from "./components/customer/QRCodeGenerator";
+import VisitMauricio from "./components/customer/VisitMauricio";
 import AdminForgotPassword from "./components/admin/AdminForgotPassword";
 import AdminResetPassword from "./components/admin/AdminResetPassword";
 import { AdminAuthForm } from "./components/admin/AdminAuthForm";
@@ -112,6 +117,13 @@ function App() {
         <Route path="/customer/reset-password/:token" element={<CustomerResetPassword />} />
         <Route path="/customer/payment" element={<CustomerPayment />} />
         <Route path="/customer/payment-qr" element={<CustomerPaymentQR />} />
+        {/* Guest routes */}
+        <Route path="/guest/menu" element={<GuestMenu />} />
+        <Route path="/guest/order-tracking" element={<GuestOrderTracking />} />
+        <Route path="/guest/order-tracking/:orderId" element={<GuestOrderTracking />} />
+        <Route path="/guest/order-success/:orderId" element={<GuestOrderSuccess />} />
+        <Route path="/qr-codes" element={<QRCodeGenerator />} />
+        <Route path="/visit-mauricio" element={<VisitMauricio />} />
         {/* Public policy pages */}
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
@@ -136,8 +148,8 @@ function App() {
           <Route path="inventory" element={<StaffInventory />} />
           <Route path="orders" element={<StaffOrders />} />
           <Route path="pos" element={<POSPage />} />
-          <Route path="loyalty" element={<StaffRewardProcessing />} />
-          <Route path="loyalty/reward-processing" element={<StaffRewardProcessing />} />
+          <Route path="loyalty" element={<StaffLoyalty />} />
+          <Route path="reward-processing" element={<StaffRewardProcessing />} />
           <Route path="sales" element={<StaffSales />} />
           <Route path="activity-logs" element={<StaffActivityLogs />} />
           <Route path="settings" element={<StaffSettings />} />

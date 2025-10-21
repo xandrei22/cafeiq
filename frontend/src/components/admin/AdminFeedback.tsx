@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
-import { Star, MessageCircle, ThumbsUp, Clock, Trash2, Filter } from 'lucide-react';
+import { Star, MessageCircle, ThumbsUp, Clock, Trash2, Filter, Search } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { io, Socket } from 'socket.io-client';
 import Swal from 'sweetalert2';
@@ -262,34 +262,12 @@ export default function AdminFeedback() {
 
                 {/* Satisfaction */}
                 <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100 lg:col-span-4">
-                  <div className="flex items-center justify-center gap-8">
-                    {/* Circular progress with icon in center */}
-                    <div className="relative w-32 h-32">
-                      {(() => {
-                        const pct = parseFloat(String(metrics.satisfiedCustomers).replace('%','')) || 0;
-                        return (
-                          <svg className="w-32 h-32 transform -rotate-90" viewBox="0 0 40 40" aria-label="Customer satisfaction">
-                            <circle cx="20" cy="20" r="17" strokeWidth="3" className="text-gray-200" stroke="currentColor" fill="none" />
-                            <circle
-                              cx="20"
-                              cy="20"
-                              r="17"
-                              strokeWidth="3"
-                              className="text-orange-500"
-                              stroke="currentColor"
-                              fill="none"
-                              strokeDasharray={`${pct}, 100`}
-                            />
-                          </svg>
-                        );
-                      })()}
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <ThumbsUp className="w-8 h-8 text-[#8B4513]" />
-                      </div>
-                    </div>
+                  <div className="flex items-center gap-6">
+                    {/* Large thumbs-up icon without ring */}
+                    <ThumbsUp className="w-20 h-20 text-[#8B4513]" />
                     {/* Centered text */}
-                    <div className="text-center">
-                      <div className="text-3xl sm:text-4xl font-bold text-[#3f3532] leading-tight">{metrics.satisfiedCustomers}</div>
+                    <div className="text-left">
+                      <div className="text-4xl sm:text-5xl font-bold text-[#3f3532] leading-tight">{metrics.satisfiedCustomers}</div>
                       <div className="text-sm text-gray-600">Customer Satisfaction</div>
                     </div>
                   </div>
@@ -297,33 +275,22 @@ export default function AdminFeedback() {
               </div>
             )}
 
-            {/* Search and Filters */}
-            <div className="flex flex-col sm:flex-row gap-6">
-              <div className="flex-1">
-                <input
-                  type="text"
-                  placeholder="Search feedback..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full px-6 py-4 text-lg border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a87437] focus:border-transparent"
-                />
-              </div>
-              <div className="flex gap-4">
-                <Select value={filterCategory} onValueChange={setFilterCategory}>
-                  <SelectTrigger className="w-48 h-12 text-lg">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="All">All categories</SelectItem>
-                    <SelectItem value="Food">Food & Drinks</SelectItem>
-                    <SelectItem value="Service">Service</SelectItem>
-                    <SelectItem value="Ambience">Ambience</SelectItem>
-                    <SelectItem value="General">General</SelectItem>
-                  </SelectContent>
-                </Select>
+            {/* Search and Filters - unified bar */}
+            <div className="bg-white rounded-2xl shadow-xl border-2 border-gray-200 p-4">
+              <div className="flex items-center gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    placeholder="Search by customer name, comment, or category..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-3 py-3 bg-white/50 backdrop-blur-sm border-white/20 focus:bg-white/70 rounded-lg border"
+                  />
+                </div>
                 <Select value={filterRating} onValueChange={setFilterRating}>
-                  <SelectTrigger className="w-40 h-12 text-lg">
-                    <SelectValue />
+                  <SelectTrigger className="min-w-[140px]">
+                    <SelectValue placeholder="All Ratings" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="All">All Ratings</SelectItem>
@@ -332,6 +299,18 @@ export default function AdminFeedback() {
                     <SelectItem value="3">3 Stars</SelectItem>
                     <SelectItem value="2">2 Stars</SelectItem>
                     <SelectItem value="1">1 Star</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={filterCategory} onValueChange={setFilterCategory}>
+                  <SelectTrigger className="min-w-[140px]">
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="All">All categories</SelectItem>
+                    <SelectItem value="Food">Food & Drinks</SelectItem>
+                    <SelectItem value="Service">Service</SelectItem>
+                    <SelectItem value="Ambience">Ambience</SelectItem>
+                    <SelectItem value="General">General</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

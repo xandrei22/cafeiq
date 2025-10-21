@@ -41,8 +41,11 @@ const AdminMenu: React.FC = () => {
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+  const API_URL = '';
 
   useEffect(() => {
     // Initialize Socket.IO connection
@@ -73,7 +76,7 @@ const AdminMenu: React.FC = () => {
   const loadMenuItems = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/menu`, { credentials: 'include' });
+      const response = await fetch('/api/menu', { credentials: 'include' });
       const data = await response.json();
       if (data.success) {
         // Ensure proper type conversion for numeric fields
@@ -93,11 +96,23 @@ const AdminMenu: React.FC = () => {
     }
   };
 
+  // Derived values for filtering and categories
+  const categories = Array.from(new Set(menuItems.map(i => i.category).filter(Boolean))) as string[];
+  const filteredItems = menuItems
+    .filter(i => selectedCategory === 'all' || i.category === selectedCategory)
+    .filter(i =>
+      [i.name, i.description, i.category]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase())
+    );
+
   const handleSave = async (productData: any) => {
     try {
       const url = editingItem 
-        ? `${API_URL}/api/menu/${editingItem.id}`
-        : `${API_URL}/api/menu`;
+        ? `/api/menu/${editingItem.id}`
+        : `/api/menu`;
       
       const method = editingItem ? 'PUT' : 'POST';
       
@@ -131,7 +146,7 @@ const AdminMenu: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/menu/${id}`, {
+      const response = await fetch(`/api/menu/${id}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -151,7 +166,7 @@ const AdminMenu: React.FC = () => {
 
   const toggleVisibility = async (id: number, field: 'visible_in_pos' | 'visible_in_customer_menu', value: boolean) => {
     try {
-      const response = await fetch(`${API_URL}/api/menu/${id}/visibility`, {
+      const response = await fetch(`/api/menu/${id}/visibility`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -207,8 +222,86 @@ const AdminMenu: React.FC = () => {
         </Button>
       </div>
 
+      {/* Filters, Search, View toggle */}
+      <div className="rounded-xl bg-[#f5f5f5] p-4">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {/* Search */}
+          <div className="relative w-full sm:w-auto sm:min-w-[18rem]">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"/></svg>
+            <input
+              placeholder="Search by name, SKU, category"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 h-10 rounded-lg bg-white border border-gray-200 px-3 w-full"
+            />
+          </div>
+
+          {/* Category Filter */}
+          <div className="w-full sm:w-auto">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="h-10 rounded-lg bg-white border border-gray-200 px-3"
+              aria-label="Filter by category"
+            >
+              <option value="all">All Categories</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* View Toggle */}
+          <div className="w-full sm:w-auto flex sm:justify-end">
+            <div className="inline-flex rounded-md overflow-hidden border bg-white">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`px-3 py-2 flex items-center gap-2 ${viewMode === 'grid' ? 'bg-gray-100' : ''}`}
+                aria-label="Grid view"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h4v4H4V6zm6 0h4v4h-4V6zm6 0h4v4h-4V6zM4 12h4v4H4v-4zm6 0h4v4h-4v-4zm6 0h4v4h-4v-4z"/></svg>
+                Grid
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`px-3 py-2 flex items-center gap-2 border-l ${viewMode === 'list' ? 'bg-gray-100' : ''}`}
+                aria-label="List view"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16"/></svg>
+                List
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {viewMode === 'grid' && (
+      <>
+      {menuItems.length === 0 ? (
+        <Card className="text-center py-12">
+          <CardContent>
+            <div className="text-gray-500">
+              <ShoppingCart className="w-16 h-16 mx-auto mb-4 opacity-50" />
+              <h3 className="text-lg font-medium mb-2">No menu items yet</h3>
+              <p className="text-sm">Create your first menu item to get started</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : filteredItems.length === 0 ? (
+        <Card className="text-center py-12">
+          <CardContent>
+            <div className="text-gray-500">
+              <ShoppingCart className="w-16 h-16 mx-auto mb-4 opacity-50" />
+              <h3 className="text-lg font-medium mb-2">No menu items found</h3>
+              <p className="text-sm">Try adjusting your search or category filter</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
-        {menuItems.map((item) => (
+        {filteredItems.map((item) => (
           <Card key={item.id} className="hover:shadow-md transition-shadow">
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-start justify-between gap-4 w-full">
@@ -216,17 +309,12 @@ const AdminMenu: React.FC = () => {
                   <div className="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 overflow-hidden rounded-lg bg-gray-100 aspect-square">
                     {item.image_url ? (
                       <img
-                        src={(() => {
-                          const path = (item.image_url || '').trim();
-                          if (!path) return '';
-                          if (/^https?:\/\//i.test(path)) return path;
-                          const withSlash = path.startsWith('/') ? path : `/${path}`;
-                          return `${API_URL}${withSlash}`;
-                        })()}
+                        src={item.image_url.startsWith('http') ? item.image_url : item.image_url}
                         alt={item.name}
                         className="w-full h-full object-cover"
                         loading="lazy"
                         onError={(e) => {
+                          console.error('Image failed to load:', item.image_url);
                           e.currentTarget.style.display = 'none';
                           e.currentTarget.nextElementSibling?.classList.remove('hidden');
                         }}
@@ -304,18 +392,100 @@ const AdminMenu: React.FC = () => {
           </Card>
         ))}
       </div>
-
-      {menuItems.length === 0 && (
-        <Card className="text-center py-12">
-          <CardContent>
-            <div className="text-gray-500">
-              <ShoppingCart className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-medium mb-2">No menu items yet</h3>
-              <p className="text-sm">Create your first menu item to get started</p>
-            </div>
-          </CardContent>
-        </Card>
       )}
+      </>
+      )}
+
+      {viewMode === 'list' && (
+        menuItems.length === 0 ? (
+          <Card className="text-center py-12">
+            <CardContent>
+              <div className="text-gray-500">
+                <ShoppingCart className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                <h3 className="text-lg font-medium mb-2">No menu items yet</h3>
+                <p className="text-sm">Create your first menu item to get started</p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : filteredItems.length === 0 ? (
+          <Card className="text-center py-12">
+            <CardContent>
+              <div className="text-gray-500">
+                <ShoppingCart className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                <h3 className="text-lg font-medium mb-2">No menu items found</h3>
+                <p className="text-sm">Try adjusting your search or category filter</p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="min-w-full text-xs table-fixed">
+            <thead>
+              <tr className="bg-gray-50 border-b">
+                <th className="text-left pl-6 pr-3 py-2">Image</th>
+                <th className="text-left px-3 py-2">Name</th>
+                <th className="text-left px-3 py-2">Category</th>
+                <th className="text-left px-3 py-2">Description</th>
+                <th className="text-left px-3 py-2">Price</th>
+                <th className="text-center px-3 py-2 w-28">POS</th>
+                <th className="text-center px-3 py-2 w-40">Customer Menu</th>
+                <th className="text-center px-3 py-2 w-28">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredItems.map(item => (
+                <tr key={item.id} className="border-b hover:bg-gray-50">
+                  <td className="pl-6 pr-3 py-1 text-gray-600 truncate max-w-[16rem]" title={item.image_url || 'No image'}>
+                    {item.image_url ? item.image_url : 'No image'}
+                  </td>
+                  <td className="px-3 py-1 font-medium truncate max-w-[12rem]">{item.name}</td>
+                  <td className="px-3 py-1 truncate whitespace-nowrap">{item.category}</td>
+                  <td className="px-3 py-1 text-gray-600 truncate max-w-[22rem]">{item.description}</td>
+                  <td className="px-3 py-1 truncate whitespace-nowrap">₱{Number(item.base_price).toFixed(2)}</td>
+                  <td className="px-3 py-1 whitespace-nowrap text-center">
+                    <button
+                      className={`px-2 py-0.5 rounded-md border ${item.visible_in_pos ? 'text-green-600 border-green-500 bg-green-50' : 'text-gray-500 border-gray-300 bg-white'}`}
+                      onClick={() => toggleVisibility(item.id, 'visible_in_pos', !item.visible_in_pos)}
+                      title="Toggle POS visibility"
+                    >
+                      {item.visible_in_pos ? 'Visible' : 'Hidden'}
+                    </button>
+                  </td>
+                  <td className="px-3 py-1 whitespace-nowrap text-center">
+                    <button
+                      className={`px-2 py-0.5 rounded-md border ${item.visible_in_customer_menu ? 'text-blue-600 border-blue-500 bg-blue-50' : 'text-gray-500 border-gray-300 bg-white'}`}
+                      onClick={() => toggleVisibility(item.id, 'visible_in_customer_menu', !item.visible_in_customer_menu)}
+                      title="Toggle customer menu visibility"
+                    >
+                      {item.visible_in_customer_menu ? 'Visible' : 'Hidden'}
+                    </button>
+                  </td>
+                  <td className="px-3 py-1 text-center whitespace-nowrap">
+                    <div className="inline-flex gap-1 justify-center">
+                      <button
+                        className="p-1.5 rounded-md border border-gray-300 hover:bg-gray-50"
+                        title="Edit"
+                        onClick={() => openForm(item)}
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        className="p-1.5 rounded-md border border-red-400 text-red-600 hover:bg-red-50"
+                        title="Delete"
+                        onClick={() => handleDelete(item.id)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        )
+      )}
+
 
       {showForm && (
         <ProductDetailsForm

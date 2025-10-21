@@ -41,7 +41,7 @@ const Footer: React.FC<FooterProps> = ({ className = '' }) => {
               <li><a href="/" className="hover:text-[#a87437] transition-colors">Home</a></li>
               <li><a href="#about" className="hover:text-[#a87437] transition-colors">About</a></li>
               <li><a href="#best-sellers" className="hover:text-[#a87437] transition-colors">Best Sellers</a></li>
-              <li><a href="#why-love-us" className="hover:text-[#a87437] transition-colors">Why You'll Love Us</a></li>
+              <li><a href="#why-love-us" className="hover:text-[#a87437] transition-colors">Offers</a></li>
               <li><a href="#location" className="hover:text-[#a87437] transition-colors">Location</a></li>
             </ul>
           </div>

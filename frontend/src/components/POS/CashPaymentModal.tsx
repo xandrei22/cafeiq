@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { X, DollarSign, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, CheckCircle, AlertCircle } from 'lucide-react';
 
 interface CashPaymentModalProps {
   order: any;
@@ -128,7 +128,7 @@ const CashPaymentModal: React.FC<CashPaymentModalProps> = ({
   if (success) {
     console.log('CashPaymentModal: Rendering success modal');
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/70">
         <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4">
           <div className="text-center">
             <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -167,12 +167,12 @@ const CashPaymentModal: React.FC<CashPaymentModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center">
-            <DollarSign className="w-6 h-6 text-green-600 mr-2" />
+            <span className="text-green-600 text-xl font-bold mr-2">₱</span>
             <h2 className="text-xl font-bold text-gray-800">Cash Payment</h2>
           </div>
           <button
@@ -189,7 +189,7 @@ const CashPaymentModal: React.FC<CashPaymentModalProps> = ({
           <h3 className="font-semibold text-gray-800 mb-2">Order Details</h3>
           <div className="space-y-1 text-sm text-gray-600">
             <p><strong>Order ID:</strong> {order.orderId}</p>
-            <p><strong>Table:</strong> {order.tableNumber}</p>
+            <p><strong>{order.tableNumber === 0 ? 'Takeout' : 'Table'}:</strong> {order.tableNumber === 0 ? '' : order.tableNumber}</p>
             <p><strong>Customer:</strong> {order.customerName}</p>
             <p><strong>Total Amount:</strong> ₱{order.totalPrice}</p>
           </div>

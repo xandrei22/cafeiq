@@ -51,7 +51,7 @@ const DrinkRecipeManager: React.FC = () => {
   const [orderQuantity, setOrderQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+  const API_URL = '';
 
   useEffect(() => {
     fetchData();
@@ -60,11 +60,11 @@ const DrinkRecipeManager: React.FC = () => {
   const fetchData = async () => {
     try {
       // Fetch menu items with ingredients
-      const menuResponse = await fetch(`${API_URL}/inventory/menu/items`);
+      const menuResponse = await fetch('/api/inventory/menu/items');
       const menuData = await menuResponse.json();
       
       // Fetch ingredients
-      const ingredientsResponse = await fetch(`${API_URL}/inventory`);
+      const ingredientsResponse = await fetch('/api/inventory');
       const ingredientsData = await ingredientsResponse.json();
       
       if (menuData.success && ingredientsData.success) {

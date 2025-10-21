@@ -5,16 +5,18 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { toast } from 'sonner';
 import { 
   Coffee, 
   Clock, 
   CheckCircle, 
   Package, 
-  DollarSign,
   Search,
   RefreshCw,
-  X
+  X,
+  User,
+  Eye
 } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 
@@ -46,7 +48,22 @@ const AdminOrders: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [orderTypeFilter, setOrderTypeFilter] = useState('all');
   const [activeTab, setActiveTab] = useState('preparing');
+  const [isMobile, setIsMobile] = useState(false);
   const socketRef = useRef<Socket | null>(null);
+
+  // Tab options for dropdown - will be defined after orders are loaded
+
+  // Screen size detection
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setIsMobile(window.innerWidth < 640); // sm breakpoint
+    };
+    
+    checkScreenSize();
+    window.addEventListener('resize', checkScreenSize);
+    
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, []);
 
   // Global error handler to suppress browser extension errors
   useEffect(() => {
@@ -187,8 +204,8 @@ const AdminOrders: React.FC = () => {
     const { silent = false } = options;
     try {
       if (!silent) setLoading(true);
-      // Use generic orders endpoint (works for admin session)
-      const response = await fetch(`/api/orders`, { credentials: 'include' });
+      // Use staff orders endpoint to ensure pending_verification orders and camelCase fields
+      const response = await fetch(`${API_URL}/api/staff/orders`, { credentials: 'include' });
       const data = response.ok ? await response.json() : null;
 
       if (data && data.success) {
@@ -223,18 +240,18 @@ const AdminOrders: React.FC = () => {
           });
 
           return {
-            orderId: orderId,
+            orderId: String(orderId),
             customerName: order.customerName || order.customer_name,
             tableNumber: order.tableNumber || order.table_number,
             items: itemsArray,
-            totalPrice: order.totalPrice || order.total_price,
+            totalPrice: Number(order.totalPrice ?? order.total_price ?? 0),
             status: normalizedStatus as any,
-            paymentStatus: order.paymentStatus || order.payment_status,
-            orderType: order.orderType || order.order_type,
+            paymentStatus: (order.paymentStatus || order.payment_status || 'pending') as any,
+            orderType: (order.orderType || order.order_type || 'dine_in') as any,
             queuePosition: order.queuePosition || 0,
             estimatedReadyTime: order.estimatedReadyTime || order.estimated_ready_time,
             orderTime: order.orderTime || order.order_time,
-            paymentMethod: order.paymentMethod || order.payment_method,
+            paymentMethod: (order.paymentMethod || order.payment_method || '').toLowerCase(),
             notes: order.notes
           };
         });
@@ -378,19 +395,77 @@ const AdminOrders: React.FC = () => {
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  const preparingStatuses = ['preparing', 'processing'];
+  // Only show actually accepted/being prepared orders here.
+  // Pending and pending_verification should NOT appear in Preparing.
+  const preparingStatuses = ['confirmed', 'preparing', 'processing'];
   const readyStatuses = ['ready'];
 
   const preparingOrders = filteredOrders.filter(order => {
-    const isPreparing = preparingStatuses.includes(String(order.status));
-    console.log('Preparing filter check:', { orderId: order.orderId, status: order.status, isPreparing, preparingStatuses });
+    const paidPending = String(order.status) === 'pending' && String((order as any).paymentStatus || (order as any).payment_status) === 'paid';
+    const isPreparing = preparingStatuses.includes(String(order.status)) || paidPending;
+    console.log('Preparing filter check:', { orderId: order.orderId, status: order.status, paymentStatus: (order as any).paymentStatus, paidPending, isPreparing, preparingStatuses });
     return isPreparing;
-  });
+  }).map((order, index) => ({
+    ...order,
+    queuePosition: index + 1
+  }));
   const readyOrders = filteredOrders.filter(order => {
     const isReady = readyStatuses.includes(String(order.status));
     console.log('Ready filter check:', { orderId: order.orderId, status: order.status, isReady, readyStatuses });
     return isReady;
   });
+
+  // Tab options for dropdown
+  const tabOptions = [
+    { value: 'preparing', label: 'Preparing', count: preparingOrders.length },
+    { value: 'ready', label: 'Ready', count: readyOrders.length }
+  ];
+
+  // Function to mark order as ready
+  const markAsReady = async (orderId: string) => {
+    try {
+      const response = await fetch(`/api/orders/${orderId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: 'ready' }),
+      });
+
+      if (response.ok) {
+        toast.success('Order marked as ready');
+        fetchOrders();
+      } else {
+        toast.error('Failed to mark order as ready');
+      }
+    } catch (error) {
+      console.error('Error marking order as ready:', error);
+      toast.error('Error marking order as ready');
+    }
+  };
+
+  // Function to mark order as completed
+  const markAsCompleted = async (orderId: string) => {
+    try {
+      const response = await fetch(`/api/orders/${orderId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: 'completed' }),
+      });
+
+      if (response.ok) {
+        toast.success('Order marked as completed');
+        fetchOrders();
+      } else {
+        toast.error('Failed to mark order as completed');
+      }
+    } catch (error) {
+      console.error('Error marking order as completed:', error);
+      toast.error('Error marking order as completed');
+    }
+  };
 
   const getStatusColor = (status: string) => {
     console.log('getStatusColor called with status:', status, 'type:', typeof status);
@@ -420,7 +495,7 @@ const AdminOrders: React.FC = () => {
       case 'pending':
         return <Clock className="w-4 h-4" />;
       case 'pending_verification':
-        return <DollarSign className="w-4 h-4" />;
+        return <span className="text-sm font-bold">₱</span>;
       case 'confirmed':
         return <CheckCircle className="w-4 h-4" />;
       case 'preparing':
@@ -444,7 +519,6 @@ const AdminOrders: React.FC = () => {
   }
 
   return (
-    <>
       <div className="space-y-4 sm:space-y-6 mx-2 sm:mx-4 lg:mx-6 p-4">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
@@ -490,7 +564,19 @@ const AdminOrders: React.FC = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{filteredOrders.filter(o => !['completed','cancelled'].includes(String(o.status))).length}</div>
+            <div className="text-2xl font-bold text-gray-900">{
+              filteredOrders.filter(o => {
+                const s = String(o.status);
+                return (
+                  s === 'pending' ||
+                  s === 'pending_verification' ||
+                  s === 'confirmed' ||
+                  s === 'preparing' ||
+                  s === 'processing' ||
+                  s === 'ready'
+                );
+              }).length
+            }</div>
           </CardContent>
         </Card>
       </div>
@@ -538,24 +624,188 @@ const AdminOrders: React.FC = () => {
 
       {/* Tabbed Order Interface */}
       <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-[#a87437]/15 p-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 bg-white/50 backdrop-blur-sm border border-[#a87437]/20">
-            <TabsTrigger value="preparing" className="flex items-center gap-2 data-[state=active]:bg-white/70">
-              <Coffee className="w-4 h-4" />
-              Preparing
-              <Badge className="ml-2 bg-blue-100 text-blue-800 border-blue-200">
-                {preparingOrders.length}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="ready" className="flex items-center gap-2 data-[state=active]:bg-white/70">
-              <Package className="w-4 h-4" />
-              Ready
-              <Badge className="ml-2 bg-green-100 text-green-800 border-green-200">
-                {readyOrders.length}
-              </Badge>
-            </TabsTrigger>
-          </TabsList>
+        {/* Responsive Navigation */}
+        <div className="space-y-6">
+          {isMobile ? (
+            /* Mobile Dropdown */
+            <div className="w-full">
+              <Select value={activeTab} onValueChange={setActiveTab}>
+                <SelectTrigger className="w-full bg-white/50 backdrop-blur-sm border border-[#a87437]/20 rounded-lg h-12">
+                  <SelectValue placeholder="Select order status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {tabOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <div className="flex items-center justify-between w-full">
+                        <span>{option.label}</span>
+                        <Badge className={`ml-2 ${option.value === 'preparing' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
+                          {option.count}
+                        </Badge>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            /* Desktop Navigation - Empty since TabsList is now in content section */
+            <div></div>
+          )}
 
+          {/* Tab Content */}
+          {isMobile ? (
+            /* Mobile Content */
+            <div className="space-y-4">
+              {activeTab === 'preparing' && (
+                <div className="space-y-4">
+                  {preparingOrders.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <Coffee className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                      <p>No orders being prepared</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {preparingOrders.map((order) => (
+                        <Card key={order.orderId} className="border-2 border-blue-200 shadow-md hover:shadow-lg transition-shadow">
+                          <CardHeader>
+                            <CardTitle className="flex items-center justify-between text-sm">
+                              <span className="text-blue-800">Order #{order.orderId}</span>
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-200">
+              Preparing
+              </Badge>
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <User className="w-4 h-4 text-gray-500" />
+                                <span className="text-sm font-medium">{order.customerName}</span>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-semibold text-gray-800">₱{order.totalPrice.toFixed(2)}</p>
+                                <p className="text-xs text-gray-500">{order.paymentMethod}</p>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <h4 className="font-medium text-gray-700 text-sm">Items:</h4>
+                              {order.items.map((item, index) => (
+                                <div key={index} className="flex items-center justify-between text-sm bg-gray-50 p-2 rounded">
+                                  <span className="text-gray-700">
+                                    {item.quantity}x {item.name}
+                                  </span>
+                                  <span className="text-gray-600">₱{item.price.toFixed(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                onClick={() => markAsReady(order.orderId)}
+                                className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm"
+                              >
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Mark Ready
+                              </Button>
+                              <Button
+                                onClick={() => setSelectedOrder(order)}
+                                variant="outline"
+                                className="flex-1 text-sm"
+                              >
+                                <Eye className="w-4 h-4 mr-2" />
+                                View Details
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {activeTab === 'ready' && (
+                <div className="space-y-4">
+                  {readyOrders.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <Package className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                      <p>No orders ready for pickup</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {readyOrders.map((order) => (
+                        <Card key={order.orderId} className="border-2 border-green-200 shadow-md hover:shadow-lg transition-shadow">
+                          <CardHeader>
+                            <CardTitle className="flex items-center justify-between text-sm">
+                              <span className="text-green-800">Order #{order.orderId}</span>
+                              <Badge className="bg-green-100 text-green-800 border-green-200">
+              Ready
+                              </Badge>
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <User className="w-4 h-4 text-gray-500" />
+                                <span className="text-sm font-medium">{order.customerName}</span>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-semibold text-gray-800">₱{order.totalPrice.toFixed(2)}</p>
+                                <p className="text-xs text-gray-500">{order.paymentMethod}</p>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <h4 className="font-medium text-gray-700 text-sm">Items:</h4>
+                              {order.items.map((item, index) => (
+                                <div key={index} className="flex items-center justify-between text-sm bg-gray-50 p-2 rounded">
+                                  <span className="text-gray-700">
+                                    {item.quantity}x {item.name}
+                                  </span>
+                                  <span className="text-gray-600">₱{item.price.toFixed(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                onClick={() => markAsCompleted(order.orderId)}
+                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm"
+                              >
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Mark Completed
+                              </Button>
+                              <Button
+                                onClick={() => setSelectedOrder(order)}
+                                variant="outline"
+                                className="flex-1 text-sm"
+                              >
+                                <Eye className="w-4 h-4 mr-2" />
+                                View Details
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Desktop Content */
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="w-full bg-white/50 backdrop-blur-sm border border-[#a87437]/20 rounded-lg flex gap-4 p-2">
+                {tabOptions.map((option) => (
+                  <TabsTrigger 
+                    key={option.value}
+                    value={option.value} 
+                    className="flex items-center gap-2 data-[state=active]:bg-white/70 text-sm px-4 py-3 w-full flex-1 justify-start rounded-md shadow-sm"
+                  >
+                    {option.value === 'preparing' ? <Coffee className="w-4 h-4 flex-shrink-0" /> : <Package className="w-4 h-4 flex-shrink-0" />}
+                    <span className="truncate">{option.label}</span>
+                    <Badge className={`ml-auto ${option.value === 'preparing' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'} text-xs`}>
+                      {option.count}
+              </Badge>
+            </TabsTrigger>
+                ))}
+          </TabsList>
 
             {/* Preparing Orders Tab */}
             <TabsContent value="preparing" className="space-y-4">
@@ -573,8 +823,13 @@ const AdminOrders: React.FC = () => {
                     <div key={order.orderId} className="bg-white/60 backdrop-blur-sm rounded-xl p-6 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 border border-[#a87437]/20">
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex-1">
-                          <h3 className="font-semibold text-gray-900 text-lg">{order.customerName}</h3>
-                          <div className="flex items-center gap-2 text-sm text-gray-600 mt-2">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="font-semibold text-gray-900 text-lg">{order.customerName}</h3>
+                            <div className="bg-[#a87437] text-white px-3 py-1 rounded-full text-sm font-bold">
+                              Queue #{order.queuePosition}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
                             <span className="font-medium bg-blue-100 text-blue-800 px-2 py-1 rounded-full">#{order.orderId}</span>
                             <span>•</span>
                             <span>{order.orderType === 'dine_in' && order.tableNumber ? `Table ${order.tableNumber}` : 'Take Out'}</span>
@@ -606,7 +861,7 @@ const AdminOrders: React.FC = () => {
                       </div>
                       
                       <div className="flex justify-between items-center mb-2 pt-3 border-t border-[#a87437]/20">
-                        <span className="font-semibold text-xl text-gray-900">₱{order.totalPrice}</span>
+                        <span className="font-semibold text-xl text-gray-900">₱{Number(order.totalPrice || 0).toFixed(2)}</span>
                       </div>
                       {order.notes && (
                         <div className="mb-4 text-sm italic text-gray-700 bg-yellow-50 border border-yellow-100 rounded-md p-3">
@@ -637,7 +892,7 @@ const AdminOrders: React.FC = () => {
                       )}
                       
                       <div className="flex gap-3">
-                        {['preparing','processing'].includes(String(order.status)) && (
+                        {['pending','pending_verification','confirmed','preparing','processing'].includes(String(order.status)) && (
                           <Button
                             size="sm"
                             onClick={() => updateOrderStatus(order.orderId, 'ready')}
@@ -725,6 +980,7 @@ const AdminOrders: React.FC = () => {
                         <span className="font-semibold text-xl text-gray-900">₱{order.totalPrice}</span>
                       </div>
                       
+                      {/* Admin complete order action */}
                       <Button
                         size="sm"
                         onClick={() => updateOrderStatus(order.orderId, 'completed')}
@@ -739,6 +995,7 @@ const AdminOrders: React.FC = () => {
               )}
             </TabsContent>
           </Tabs>
+          )}
         </div>
 
         {/* Payment Verification Modal */}
@@ -785,7 +1042,7 @@ const AdminOrders: React.FC = () => {
 
         {/* Payment Success Modal */}
         {showSuccessModal && paymentSuccessData && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/70">
             <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4">
               <div className="text-center">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -831,7 +1088,7 @@ const AdminOrders: React.FC = () => {
           </div>
         )}
       </div>
-    </>
+      </div>
   );
 };
 

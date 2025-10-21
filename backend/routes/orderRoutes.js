@@ -44,7 +44,7 @@ router.post('/', async(req, res) => {
             // Create order - Admin POS orders should go to payment verification
             const isImmediatePay = paymentMethod === 'cash' || paymentMethod === 'gcash' || paymentMethod === 'paymaya';
             const orderStatus = isImmediatePay ? 'pending_verification' : 'pending';
-            const paymentStatus = 'pending';
+            const paymentStatus = isImmediatePay ? 'pending' : 'pending';
 
             // Generate a unique order number for display purposes
             const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
@@ -220,7 +220,9 @@ router.get('/', async(req, res) => {
                 orderTime: order.order_time,
                 paymentStatus: order.payment_status,
                 paymentMethod: order.payment_method,
-                items: enrichedItems
+                items: enrichedItems,
+                placedBy: order.staff_id ? 'staff' : 'customer',
+                receiptPath: order.receipt_path
             };
         }));
 
@@ -559,6 +561,9 @@ router.put('/:orderId/status', async(req, res) => {
 
         if (status === 'completed') {
             updateFields.push('completed_time = NOW()');
+            // Automatically set payment status to 'paid' when order is completed
+            updateFields.push('payment_status = ?');
+            params.push('paid');
         }
 
         if (updateFields.length === 0) {

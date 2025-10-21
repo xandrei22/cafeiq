@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Button } from '../ui/button';
@@ -6,7 +6,7 @@ import { Card, CardContent } from '../ui/card';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { toast } from 'sonner';
-import { io, Socket } from 'socket.io-client';
+import { io } from 'socket.io-client';
 
 interface CustomerEventFormProps {
   customer_id: number;
@@ -27,6 +27,7 @@ const OCCASION_OPTIONS = [
 ];
 
 const CustomerEventForm: React.FC<CustomerEventFormProps> = ({ customer_id, customer_name }) => {
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
   const [eventDate, setEventDate] = useState('');
   const [eventStartTime, setEventStartTime] = useState('');
   const [eventEndTime, setEventEndTime] = useState('');
@@ -40,7 +41,6 @@ const CustomerEventForm: React.FC<CustomerEventFormProps> = ({ customer_id, cust
   const [loading, setLoading] = useState(false);
   const [userEvents, setUserEvents] = useState<any[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
-  const [socket, setSocket] = useState<Socket | null>(null);
 
   // Get minimum date (tomorrow)
   const getMinDate = () => {
@@ -60,7 +60,9 @@ const CustomerEventForm: React.FC<CustomerEventFormProps> = ({ customer_id, cust
   // Fetch user's event requests
   const fetchUserEvents = async () => {
     try {
-      const res = await fetch(`/api/events/customer/${customer_id}`);
+      const res = await fetch(`${API_URL}/api/events/customer/${customer_id}`, {
+        credentials: 'include'
+      });
       const data = await res.json();
       if (res.ok && data.success) {
         setUserEvents(data.events);
@@ -75,12 +77,28 @@ const CustomerEventForm: React.FC<CustomerEventFormProps> = ({ customer_id, cust
   // Load user events on component mount and setup WebSocket
   React.useEffect(() => {
     // Initialize Socket.IO connection
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-    const newSocket = io(API_URL);
-    setSocket(newSocket);
+    const newSocket = io(API_URL, {
+      transports: ['polling', 'websocket'],
+      path: '/socket.io',
+      withCredentials: true,
+      timeout: 30000,
+      forceNew: true,
+      autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: 3,
+      reconnectionDelay: 1500
+    });
 
     // Join customer room for real-time updates
-    newSocket.emit('join-customer-room', { customerEmail: customer_name });
+    newSocket.on('connect', () => {
+      newSocket.emit('join-customer-room', { customerEmail: customer_name });
+    });
+    newSocket.io.on('reconnect', () => {
+      newSocket.emit('join-customer-room', { customerEmail: customer_name });
+    });
+    newSocket.on('connect_error', (err) => {
+      console.warn('CustomerEventForm socket connect_error:', err?.message || err);
+    });
 
     // Listen for real-time updates
     newSocket.on('event-updated', (data) => {
@@ -113,8 +131,8 @@ const CustomerEventForm: React.FC<CustomerEventFormProps> = ({ customer_id, cust
       toast('Invalid Time Range', { description: 'End time must be after start time.' });
       return false;
     }
-    if (!cups || Number(cups) < 25) {
-      toast('Number of Cups is required', { description: 'Minimum order is 25 cups.' });
+    if (!cups || Number(cups) < 80) {
+      toast('Number of Cups is required', { description: 'Minimum order is 80 cups.' });
       return false;
     }
     if (!contactName.trim()) {
@@ -166,9 +184,10 @@ const CustomerEventForm: React.FC<CustomerEventFormProps> = ({ customer_id, cust
     console.log('Submitting event form with data:', formData);
     
     try {
-      const res = await fetch('/api/events', {
+      const res = await fetch(`${API_URL}/api/events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(formData),
       });
       
@@ -221,37 +240,58 @@ const CustomerEventForm: React.FC<CustomerEventFormProps> = ({ customer_id, cust
   };
 
   return (
-    <div className="min-h-screen bg-[#f5f5f5]">
-      <div className="max-w-6xl mx-2 sm:mx-4 lg:mx-6 pt-4">
-        {/* Header */}
-        <div className="space-y-4 sm:space-y-6 px-2 sm:px-4 lg:px-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
-            <div className="min-w-0 flex-1">
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Event Reservations</h1>
-              <p className="text-sm sm:text-base text-gray-600 mt-1">Reserve coffee for your special events and celebrations</p>
-            </div>
-          </div>
+    <>
+      {/* Header - Match Menu page spacing and alignment */}
+      <div className="space-y-4 sm:space-y-6 ml-0 mr-2 sm:mr-4 lg:mr-6 pt-1">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Event Reservations</h1>
+          <p className="text-sm sm:text-base text-gray-600 mt-1">Reserve coffee for your special events and celebrations</p>
         </div>
-        
-        <div className="flex flex-col lg:flex-row gap-8 max-w-5xl mx-auto justify-start items-start lg:ml-16">
+      </div>
+
+      {/* Form Containers - Separate with different background */}
+      <div className="min-h-screen bg-[#f5f5f5] p-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Event Form - Left Side */}
-          <Card className="w-full lg:w-1/2 border-2 border-[#a87437] shadow-xl hover:shadow-2xl transition-shadow duration-300">
+          <Card className="xl:col-span-2 border-2 border-[#a87437] shadow-xl hover:shadow-2xl transition-shadow duration-300">
             <CardContent className="p-6">
               <form className="space-y-6" onSubmit={handleSubmit}>
                 <h2 className="text-2xl font-bold text-[#6B5B5B] mb-6">Reserve for a Special Event</h2>
           
-          <div>
-            <Label htmlFor="event-date" className="text-sm font-medium text-[#6B5B5B] mb-2 block">Event Date *</Label>
-            <Input
-              id="event-date"
-              type="date"
-              value={eventDate}
-              min={getMinDate()}
-              onChange={e => setEventDate(e.target.value)}
-              required
-              className="h-12 border-2 border-[#a87437] rounded-xl focus:border-[#a87437] focus:ring-2 focus:ring-[#a87437]/20"
-            />
-            <p className="text-xs text-gray-500 mt-1">Minimum 1 day advance booking required</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="occasion" className="text-sm font-medium text-[#6B5B5B] mb-2 block">Event Type/Occasion *</Label>
+              <Select value={selectedOccasion} onValueChange={setSelectedOccasion} required>
+                <SelectTrigger 
+                  className="w-full h-12 min-h-[48px] border-2 border-[#a87437] rounded-xl focus:border-[#a87437] focus:ring-2 focus:ring-[#a87437]/20 flex items-center justify-between"
+                  style={{ height: '48px', minHeight: '48px' }}
+                >
+                  <SelectValue placeholder="Select an occasion" />
+                </SelectTrigger>
+                <SelectContent>
+                  {OCCASION_OPTIONS.map((occasion) => (
+                    <SelectItem key={occasion.value} value={occasion.value}>
+                      {occasion.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="event-date" className="text-sm font-medium text-[#6B5B5B] mb-2 block">Event Date *</Label>
+              <Input
+                id="event-date"
+                type="date"
+                value={eventDate}
+                min={getMinDate()}
+                onChange={e => setEventDate(e.target.value)}
+                required
+                className="h-12 min-h-[48px] border-2 border-[#a87437] rounded-xl focus:border-[#a87437] focus:ring-2 focus:ring-[#a87437]/20 flex items-center"
+                style={{ height: '48px', minHeight: '48px' }}
+              />
+              <p className="text-xs text-gray-500 mt-1">Minimum 1 day advance booking required</p>
+            </div>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -281,22 +321,6 @@ const CustomerEventForm: React.FC<CustomerEventFormProps> = ({ customer_id, cust
             </div>
           </div>
           
-          <div>
-            <Label htmlFor="occasion" className="text-sm font-medium text-[#6B5B5B] mb-2 block">Event Type/Occasion *</Label>
-            <Select value={selectedOccasion} onValueChange={setSelectedOccasion} required>
-              <SelectTrigger className="w-full h-12 border-2 border-[#a87437] rounded-xl focus:border-[#a87437] focus:ring-2 focus:ring-[#a87437]/20">
-                <SelectValue placeholder="Select an occasion" />
-              </SelectTrigger>
-              <SelectContent>
-                {OCCASION_OPTIONS.map((occasion) => (
-                  <SelectItem key={occasion.value} value={occasion.value}>
-                    {occasion.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          
           {selectedOccasion === 'other' && (
             <div>
               <Label htmlFor="custom-occasion" className="text-sm font-medium text-[#6B5B5B] mb-2 block">Specify Event Type *</Label>
@@ -313,20 +337,6 @@ const CustomerEventForm: React.FC<CustomerEventFormProps> = ({ customer_id, cust
           )}
           
           <div>
-            <Label htmlFor="cups" className="text-sm font-medium text-[#6B5B5B] mb-2 block">Number of Cups *</Label>
-            <Input
-              id="cups"
-              type="number"
-              min={25}
-              value={cups}
-              onChange={e => setCups(e.target.value)}
-              required
-              className="h-12 border-2 border-[#a87437] rounded-xl focus:border-[#a87437] focus:ring-2 focus:ring-[#a87437]/20"
-            />
-            <p className="text-xs text-gray-500 mt-1">Minimum order is 25 cups</p>
-          </div>
-          
-          <div>
             <Label htmlFor="contact-name" className="text-sm font-medium text-[#6B5B5B] mb-2 block">Contact Name *</Label>
             <Input
               id="contact-name"
@@ -339,17 +349,32 @@ const CustomerEventForm: React.FC<CustomerEventFormProps> = ({ customer_id, cust
             />
           </div>
           
-          <div>
-            <Label htmlFor="contact-number" className="text-sm font-medium text-[#6B5B5B] mb-2 block">Contact Number *</Label>
-            <Input
-              id="contact-number"
-              type="tel"
-              placeholder="e.g., 0921473335"
-              value={contactNumber}
-              onChange={e => setContactNumber(e.target.value)}
-              required
-              className="h-12 border-2 border-[#a87437] rounded-xl focus:border-[#a87437] focus:ring-2 focus:ring-[#a87437]/20"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="contact-number" className="text-sm font-medium text-[#6B5B5B] mb-2 block">Contact Number *</Label>
+              <Input
+                id="contact-number"
+                type="tel"
+                placeholder="e.g., 0921473335"
+                value={contactNumber}
+                onChange={e => setContactNumber(e.target.value)}
+                required
+                className="h-12 border-2 border-[#a87437] rounded-xl focus:border-[#a87437] focus:ring-2 focus:ring-[#a87437]/20"
+              />
+            </div>
+            <div>
+              <Label htmlFor="cups" className="text-sm font-medium text-[#6B5B5B] mb-2 block">Number of Cups *</Label>
+              <Input
+                id="cups"
+                type="number"
+                min={80}
+                value={cups}
+                onChange={e => setCups(e.target.value)}
+                placeholder="Minimum order is 80 cups"
+                required
+                className="h-12 border-2 border-[#a87437] rounded-xl focus:border-[#a87437] focus:ring-2 focus:ring-[#a87437]/20"
+              />
+            </div>
           </div>
           
           <div>
@@ -389,7 +414,7 @@ const CustomerEventForm: React.FC<CustomerEventFormProps> = ({ customer_id, cust
           </Card>
 
           {/* Your Event Requests - Right Side */}
-          <Card className="w-full lg:w-1/2 border-2 border-[#a87437] shadow-xl hover:shadow-2xl transition-shadow duration-300 lg:sticky lg:top-4">
+          <Card className="xl:col-span-1 border-2 border-[#a87437] shadow-xl hover:shadow-2xl transition-shadow duration-300 xl:sticky xl:top-4">
             <CardContent className="p-6">
               <h3 className="text-xl font-bold text-[#6B5B5B] mb-6">Your Event Requests</h3>
         
@@ -437,9 +462,10 @@ const CustomerEventForm: React.FC<CustomerEventFormProps> = ({ customer_id, cust
               )}
             </CardContent>
           </Card>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 };
 

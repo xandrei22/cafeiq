@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, Check, X, Mail, AlertTriangle, ShoppingCart, Calendar, CreditCard } from 'lucide-react';
+import { Bell, Check, Mail, AlertTriangle, ShoppingCart, Calendar, CreditCard } from 'lucide-react';
 import { io } from 'socket.io-client';
 
 interface Notification {
@@ -235,6 +235,8 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({ userType
                           <button
                             onClick={() => markAsRead(notification.id)}
                             className="p-1 hover:bg-gray-200 rounded"
+                            title="Mark as read"
+                            aria-label="Mark notification as read"
                           >
                             <Check className="w-3 h-3 text-gray-500" />
                           </button>

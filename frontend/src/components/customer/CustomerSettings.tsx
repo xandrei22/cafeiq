@@ -186,19 +186,13 @@ const CustomerSettings: React.FC = () => {
     return (
         <div className="min-h-screen bg-[#f5f5f5]">
             {/* Header */}
-            <div className="space-y-4 sm:space-y-6 mx-2 sm:mx-4 lg:mx-6 p-4">
+            <div className="space-y-4 sm:space-y-6 ml-0 sm:ml-1 lg:ml-2 mr-2 sm:mr-4 lg:mr-6 p-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
                     <div className="min-w-0 flex-1">
                         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Account Settings</h1>
                         <p className="text-sm sm:text-base text-gray-600 mt-1">Manage your account preferences and information</p>
                     </div>
-                    <button
-                        onClick={() => window.history.back()}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                        title="Go Back"
-                    >
-                        <ArrowLeft className="h-5 w-5 text-gray-600" />
-                    </button>
+                    {/* Back arrow removed per design */}
                 </div>
             </div>
 
@@ -233,6 +227,32 @@ const CustomerSettings: React.FC = () => {
 
                 {/* Account Settings Sections */}
                 <div className="space-y-6 mb-8">
+                    {/* Account Information Section */}
+                    <div className="bg-white border border-gray-200 rounded-lg p-6">
+                        <div className="flex items-center space-x-3 mb-4">
+                            <Mail className="h-6 w-6 text-gray-600" />
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-900">Account Information</h3>
+                                <p className="text-sm text-gray-600">Your account details</p>
+                            </div>
+                        </div>
+                        
+                        <div className="space-y-3">
+                            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                                <span className="text-sm font-medium text-gray-600">Email</span>
+                                <span className="text-sm text-gray-900">{settings.email}</span>
+                            </div>
+                            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                                <span className="text-sm font-medium text-gray-600">Username</span>
+                                <span className="text-sm text-gray-900">{settings.username}</span>
+                            </div>
+                            <div className="flex justify-between items-center py-2">
+                                <span className="text-sm font-medium text-gray-600">Last Username Change</span>
+                                <span className="text-sm text-gray-900">{formatDate(settings.lastUsernameChange)}</span>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Username Section */}
                     <div className="bg-white border border-gray-200 rounded-lg p-6">
                         <div className="flex items-center justify-between mb-4">
@@ -335,50 +355,8 @@ const CustomerSettings: React.FC = () => {
                             </form>
                         )}
                     </div>
-
-                    {/* Account Information Section */}
-                    <div className="bg-white border border-gray-200 rounded-lg p-6">
-                        <div className="flex items-center space-x-3 mb-4">
-                            <Mail className="h-6 w-6 text-gray-600" />
-                            <div>
-                                <h3 className="text-lg font-semibold text-gray-900">Account Information</h3>
-                                <p className="text-sm text-gray-600">Your account details</p>
-                            </div>
-                        </div>
-                        
-                        <div className="space-y-3">
-                            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                                <span className="text-sm font-medium text-gray-600">Email</span>
-                                <span className="text-sm text-gray-900">{settings.email}</span>
-                            </div>
-                            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                                <span className="text-sm font-medium text-gray-600">Username</span>
-                                <span className="text-sm text-gray-900">{settings.username}</span>
-                            </div>
-                            <div className="flex justify-between items-center py-2">
-                                <span className="text-sm font-medium text-gray-600">Last Username Change</span>
-                                <span className="text-sm text-gray-900">{formatDate(settings.lastUsernameChange)}</span>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
-                {/* User Profile Section */}
-                <div className="bg-[#a87437] rounded-lg p-6 text-white">
-                    <div className="flex items-center space-x-4">
-                        <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center">
-                            <User className="w-8 h-8 text-[#a87437]" />
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-semibold text-white">
-                                {user?.fullName || user?.username || 'User'}
-                            </h3>
-                            <p className="text-white/80 text-sm">
-                                {settings?.email || user?.email || 'No email'}
-                            </p>
-                        </div>
-                    </div>
-                </div>
 
 
             </div>

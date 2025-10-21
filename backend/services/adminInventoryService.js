@@ -368,10 +368,24 @@ class AdminInventoryService {
                 ORDER BY mi.category, mi.name
             `);
 
-            // Check ingredient availability for each menu item
+            // Deduplicate items by name - keep the one with highest ID (most recent)
+            const uniqueItems = [];
+            const seenNames = new Set();
+            
+            // Sort by ID descending to keep the most recent version
+            const sortedItems = menuItems.sort((a, b) => b.id - a.id);
+            
+            for (const item of sortedItems) {
+                if (!seenNames.has(item.name)) {
+                    seenNames.add(item.name);
+                    uniqueItems.push(item);
+                }
+            }
+
+            // Check ingredient availability for each unique menu item
             const availableItems = [];
 
-            for (const item of menuItems) {
+            for (const item of uniqueItems) {
                 const [ingredientCheck] = await db.query(`
                     SELECT 
                         COUNT(*) as total_ingredients,

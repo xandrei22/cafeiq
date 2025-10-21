@@ -1,16 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
-  Coffee, 
-  Clock, 
-  CheckCircle, 
-  Users, 
-  QrCode,
-  AlertCircle,
-  DollarSign
+  Coffee,
+  Clock,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 import SimplePOS from './SimplePOS';
 import PaymentProcessor from './PaymentProcessor';
@@ -23,8 +18,8 @@ interface Order {
   tableNumber: number;
   items: any[];
   totalPrice: number;
-  status: 'pending' | 'preparing' | 'ready' | 'completed' | 'cancelled';
-  paymentStatus: 'pending' | 'paid' | 'failed';
+  status: 'pending' | 'pending_verification' | 'processing' | 'preparing' | 'ready' | 'completed' | 'cancelled';
+  paymentStatus: 'pending' | 'pending_verification' | 'paid' | 'failed';
   paymentMethod: string;
   orderTime: string;
   notes?: string;
@@ -78,7 +73,8 @@ const POSDashboard: React.FC = () => {
         // Initialize Socket.IO connection with proper backend URL
         const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
         newSocket = io(API_URL, {
-          transports: ['websocket', 'polling'],
+          transports: ['polling', 'websocket'],
+          path: '/socket.io',
           timeout: 30000,
           forceNew: true,
           autoConnect: true,
@@ -113,13 +109,24 @@ const POSDashboard: React.FC = () => {
 
         newSocket.on('order-updated', (updateData) => {
           if (isMounted) {
-            fetchOrders();
-            fetchStats();
+            console.log('🔄 Order updated received:', updateData);
+            // Force immediate refresh for receipt uploads
+            if (updateData.paymentStatus === 'pending_verification') {
+              console.log('🔄 Receipt uploaded - forcing immediate refresh');
+              setTimeout(() => {
+                fetchOrders();
+                fetchStats();
+              }, 100);
+            } else {
+              fetchOrders();
+              fetchStats();
+            }
           }
         });
 
         newSocket.on('payment-updated', (paymentData) => {
           if (isMounted) {
+            console.log('💳 Payment updated received:', paymentData);
             fetchOrders();
             fetchStats();
           }
@@ -136,13 +143,13 @@ const POSDashboard: React.FC = () => {
     fetchOrders();
     fetchStats();
 
-    // Fallback: Poll for updates every 5 seconds if Socket.IO fails
+    // Fallback: Poll for updates every 3 seconds to ensure we don't miss any updates
     const pollInterval = setInterval(() => {
       if (isMounted) {
         fetchOrders();
         fetchStats();
       }
-    }, 5000);
+    }, 3000);
 
     return () => {
       isMounted = false;
@@ -160,10 +167,29 @@ const POSDashboard: React.FC = () => {
 
   const fetchOrders = async () => {
     try {
-      const response = await fetch(`/api/orders`, { credentials: 'include' });
+      // Use role-appropriate endpoint
+      const endpoint = isAdminRoute ? '/api/orders' : '/api/staff/orders';
+      const response = await fetch(endpoint, { credentials: 'include' });
       const data = await response.json();
       if (data.success) {
-        setOrders(data.orders);
+        console.log('📋 Fetched orders:', data.orders.length, 'orders');
+        const normalized: Order[] = (data.orders || []).map((o: any) => ({
+          id: String(o.orderId || o.id || o.order_id || ''),
+          orderId: String(o.orderId || o.id || o.order_id || ''),
+          customerName: o.customerName || o.customer_name || 'Customer',
+          tableNumber: Number(o.tableNumber ?? o.table_number ?? 0),
+          items: o.items || [],
+          totalPrice: Number(o.totalPrice ?? o.total_price ?? 0),
+          status: String(o.status || 'pending') as Order['status'],
+          paymentStatus: String(o.paymentStatus ?? o.payment_status ?? (o.receiptPath || o.receipt_path ? 'pending_verification' : 'pending')) as Order['paymentStatus'],
+          paymentMethod: String(o.paymentMethod ?? o.payment_method ?? ''),
+          orderTime: o.orderTime || o.order_time || new Date().toISOString(),
+          notes: o.notes || undefined,
+          placedBy: o.placedBy || 'customer',
+          receiptPath: o.receiptPath || o.receipt_path,
+        }));
+        console.log('📋 Orders with pending_verification:', normalized.filter(o => o.paymentStatus === 'pending_verification'));
+        setOrders(normalized);
       }
     } catch (error) {
       console.error('Error fetching orders:', error);
@@ -232,7 +258,7 @@ const POSDashboard: React.FC = () => {
     const color = status === 'paid' ? 'bg-green-500' : status === 'failed' ? 'bg-red-500' : 'bg-yellow-500';
     return (
       <Badge className={`${color} text-white`}>
-        <DollarSign className="w-3 h-3 mr-1" />
+        <span className="text-xs font-bold mr-1">₱</span>
         {status.charAt(0).toUpperCase() + status.slice(1)}
       </Badge>
     );
@@ -247,69 +273,17 @@ const POSDashboard: React.FC = () => {
           <p className="text-sm sm:text-base text-gray-600">Select items and manage orders</p>
         </div>
 
-        {/* Stats Cards - 2x2 Grid Above Take Order */}
-        <div className="grid grid-cols-2 gap-4 mb-6 bg-[#f5f5f5] p-2 rounded-xl">
-          <Card className="bg-white border shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-4">
-              <div className="flex items-center">
-                <div className="p-3 bg-[#a87437]/10 rounded-lg">
-                  <Coffee className="h-8 w-8 text-[#a87437]" />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-[#6B5B5B]">Total Orders</p>
-                  <p className="text-2xl font-bold text-[#3f3532]">{stats.totalOrders}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white border shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-4">
-              <div className="flex items-center">
-                <div className="p-3 bg-yellow-100 rounded-lg">
-                  <Clock className="h-8 w-8 text-yellow-600" />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-[#6B5B5B]">Pending</p>
-                  <p className="text-2xl font-bold text-[#3f3532]">{stats.pendingOrders}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white border shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-4">
-              <div className="flex items-center">
-                <div className="p-3 bg-green-100 rounded-lg">
-                  <CheckCircle className="h-8 w-8 text-green-600" />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-[#6B5B5B]">Completed</p>
-                  <p className="text-2xl font-bold text-[#3f3532]">{stats.completedOrders}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white border shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-4">
-              <div className="flex items-center">
-                <div className="p-3 bg-green-100 rounded-lg text-green-600 font-semibold text-xl">₱</div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-[#6B5B5B]">Revenue</p>
-                  <p className="text-2xl font-bold text-[#3f3532]">₱{stats.totalRevenue.toFixed(2)}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Stats cards removed per request */}
 
         {/* Unified SimplePOS instance renders menu + sidebar sharing a single cart */}
         <div className="mb-6">
           <SimplePOS 
             children={
               <PaymentProcessor 
-                orders={orders.filter(o => o.paymentStatus === 'pending')}
+                orders={orders.filter(o => 
+                  (o.paymentStatus === 'pending' || o.paymentStatus === 'pending_verification') ||
+                  (o.paymentStatus === 'paid' && o.status === 'pending')
+                )}
                 onPaymentProcessed={fetchOrders}
                 staffId={isAdminRoute ? 'admin' : 'staff'}
               />

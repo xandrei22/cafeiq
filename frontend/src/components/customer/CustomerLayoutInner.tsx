@@ -43,7 +43,7 @@ export default function CustomerLayoutInner({ children }: { children: React.Reac
         navigate('/login');
       }
     }
-  }, [authenticated, loading, navigate, location.search]);
+  }, [authenticated, loading, location.search]);
 
   // Show loading while checking authentication
   if (loading) {
@@ -89,16 +89,18 @@ export default function CustomerLayoutInner({ children }: { children: React.Reac
             group-data-[collapsible=icon]:pl-0
           "
           >
-            <div className="bg-white rounded-full p-0.5 group-data-[collapsible=icon]:p-0.5">
-              <img
-                src="/images/logo.png"
-                alt="Logo"
-                className="h-3 w-3 object-cover group-data-[collapsible=icon]:h-3 group-data-[collapsible=icon]:w-3"
-              />
+            <div className="group-data-[collapsible=icon]:p-0.5">
+              <div className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center p-1 border border-white/80 group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8">
+                <img
+                  src="/images/mau-removebg-preview.png"
+                  alt="Mauricio's Cafe and Bakery Logo"
+                  className="h-8 w-8 object-contain group-data-[collapsible=icon]:h-6 group-data-[collapsible=icon]:w-6"
+                />
+              </div>
             </div>
             <div className="group-data-[collapsible=icon]:hidden">
-              <div className="font-bold text-xs text-white">CaféIQ</div>
-              <div className="text-xs text-white/90 leading-none">Mauricio's Cafe and Bakery</div>
+              <div className="font-bold text-xs text-white">Mauricio's</div>
+              <div className="text-xs text-white/90 leading-none">Cafe and Bakery</div>
             </div>
           </div>
         </SidebarHeader>

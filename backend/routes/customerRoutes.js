@@ -57,9 +57,12 @@ router.get('/:customerId/loyalty', async(req, res) => {
 
         const totalRedeemed = redeemedResult[0].total_redeemed || 0;
 
+        const calculatedCurrent = Math.max(0, (totalEarned || 0) - (totalRedeemed || 0));
+        const currentPoints = (customer.loyalty_points == null || customer.loyalty_points === 0) ? calculatedCurrent : customer.loyalty_points;
+
         res.json({
             success: true,
-            loyalty_points: customer.loyalty_points,
+            loyalty_points: currentPoints,
             total_earned: totalEarned,
             total_redeemed: totalRedeemed,
             member_since: customer.member_since,
@@ -82,16 +85,16 @@ router.get('/:customerId/points-earned-history', async(req, res) => {
         const [orders] = await db.query(`
             SELECT 
                 o.order_id,
-                o.created_at as order_date,
+                COALESCE(o.completed_time, o.order_time, o.updated_at, o.created_at) as order_date,
                 o.total_price,
                 o.status,
                 o.items,
                 COALESCE(lt.points_earned, 0) as points_earned
             FROM orders o
-            LEFT JOIN loyalty_transactions lt ON o.id = lt.order_id AND lt.transaction_type = 'earned'
+            LEFT JOIN loyalty_transactions lt ON o.id = lt.order_id AND lt.transaction_type = 'earn'
             WHERE o.customer_id = ? 
             AND o.payment_status = 'paid'
-            ORDER BY o.created_at DESC
+            ORDER BY COALESCE(o.completed_time, o.order_time, o.updated_at, o.created_at) DESC
         `, [customerId]);
 
         const pointsHistory = orders.map(order => {

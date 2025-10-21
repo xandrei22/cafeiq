@@ -3,7 +3,6 @@ import { SidebarTrigger, useSidebar } from "../ui/sidebar";
 import { Bell, ChevronRight } from "lucide-react";
 import { useLocation } from 'react-router-dom';
 import NotificationSystem from '../admin/NotificationSystem';
-import NotificationDetailModal from '../admin/NotificationDetailModal';
 
 const StaffNavbar: React.FC = () => {
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -12,10 +11,7 @@ const StaffNavbar: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
   const [lowStockCount, setLowStockCount] = useState(0);
-  const [pendingEventsCount, setPendingEventsCount] = useState(0);
   const [lowStockItems, setLowStockItems] = useState<any[]>([]);
-  const [selectedNotification, setSelectedNotification] = useState<any>(null);
-  const [showNotificationDetail, setShowNotificationDetail] = useState(false);
   const location = useLocation();
   const { state } = useSidebar(); // Get sidebar state
 
@@ -150,14 +146,15 @@ const StaffNavbar: React.FC = () => {
 
   // Handle notification click
   const handleNotificationClick = (notification: any) => {
-    setSelectedNotification(notification);
-    setShowNotificationDetail(true);
-    setShowNotifications(false);
-    
-    // Automatically mark as read when clicked
+    // Mark as read when clicked
     if (!notification.is_read) {
       markNotificationAsRead(notification.id);
     }
+    
+    // Close the notification dropdown
+    setShowNotifications(false);
+    
+    // Notifications are view-only - no modal or navigation
   };
 
   // Toggle notifications dropdown
@@ -279,29 +276,8 @@ const StaffNavbar: React.FC = () => {
           <span className="sr-only">Total notifications: {totalNotifications}</span>
         </div>
 
-        {/* Pending Events Notification */}
-        <div className="relative">
-          <div className="h-6 w-6 text-white flex items-center justify-center">
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          </div>
-          {!loading && pendingEventsCount > 0 && (
-            <span className="absolute -top-2 -right-2 bg-orange-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-medium">
-              {pendingEventsCount > 99 ? '99+' : pendingEventsCount}
-            </span>
-          )}
-          <span className="sr-only">Pending events: {pendingEventsCount}</span>
-        </div>
       </div>
 
-      {/* Notification Detail Modal */}
-      <NotificationDetailModal
-        isOpen={showNotificationDetail}
-        onClose={() => setShowNotificationDetail(false)}
-        notification={selectedNotification}
-        onMarkAsRead={markNotificationAsRead}
-      />
     </nav>
   );
 };

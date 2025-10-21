@@ -22,7 +22,7 @@ interface Order {
   items: any[];
   totalPrice: number;
   status: 'pending' | 'preparing' | 'ready' | 'completed' | 'cancelled';
-  paymentStatus: 'pending' | 'paid' | 'failed';
+  paymentStatus: 'pending' | 'pending_verification' | 'paid' | 'failed';
   paymentMethod: string;
   orderTime: string;
   notes?: string;
@@ -160,7 +160,7 @@ const TableStatus: React.FC<TableStatusProps> = ({ tables, orders }) => {
                       </div>
                       <div className="flex justify-between">
                         <span>Total:</span>
-                        <span>${currentOrder.totalPrice.toFixed(2)}</span>
+                        <span>₱{currentOrder.totalPrice.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Payment:</span>

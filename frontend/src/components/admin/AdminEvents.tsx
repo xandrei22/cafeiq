@@ -4,6 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
 import { toast } from 'sonner';
 import { io, Socket } from 'socket.io-client';
 import { 
@@ -18,7 +21,9 @@ import {
   MapPin,
   Phone,
   User,
-  RefreshCw
+  RefreshCw,
+  CreditCard,
+  Plus
 } from 'lucide-react';
 
 interface Event {
@@ -42,6 +47,18 @@ const AdminEvents: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [socket, setSocket] = useState<Socket | null>(null);
+  
+  // Payment form state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [paymentForm, setPaymentForm] = useState({
+    amount: '',
+    payment_method: '',
+    status: 'not_paid',
+    amount_paid: '',
+    amount_to_be_paid: ''
+  });
+  const [paymentLoading, setPaymentLoading] = useState(false);
 
   const fetchEvents = async () => {
     setLoading(true);
@@ -63,7 +80,7 @@ const AdminEvents: React.FC = () => {
   useEffect(() => {
     // Initialize Socket.IO connection
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-    const newSocket = io(API_URL);
+    const newSocket = io(API_URL, { transports: ['polling','websocket'], path: '/socket.io' });
     setSocket(newSocket);
 
     // Join admin room for real-time updates
@@ -97,6 +114,57 @@ const AdminEvents: React.FC = () => {
       toast('Network error', { description: 'Please try again.' });
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const openPaymentModal = (event: Event) => {
+    setSelectedEvent(event);
+    setPaymentForm({
+      amount: '',
+      payment_method: '',
+      status: 'not_paid',
+      amount_paid: '',
+      amount_to_be_paid: ''
+    });
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEvent) return;
+
+    setPaymentLoading(true);
+    try {
+      const res = await fetch('/api/admin/event-sales', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          event_id: selectedEvent.id,
+          amount: parseFloat(paymentForm.amount),
+          payment_method: paymentForm.payment_method,
+          status: paymentForm.status,
+          amount_paid: parseFloat(paymentForm.amount_paid) || 0,
+          amount_to_be_paid: parseFloat(paymentForm.amount_to_be_paid) || parseFloat(paymentForm.amount)
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast('Payment added successfully', { description: 'Event sales record created' });
+        setShowPaymentModal(false);
+        setSelectedEvent(null);
+        // Refresh events to show updated data
+        fetchEvents();
+      } else {
+        toast('Failed to add payment', { description: data.message || 'Please try again.' });
+      }
+    } catch (err) {
+      toast('Network error', { description: 'Please try again.' });
+    } finally {
+      setPaymentLoading(false);
     }
   };
 
@@ -339,7 +407,17 @@ const AdminEvents: React.FC = () => {
                             </Button>
                           </div>
                         )}
-                        {event.status !== 'pending' && (
+                        {event.status === 'accepted' && (
+                          <Button
+                            size="sm"
+                            className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg"
+                            onClick={() => openPaymentModal(event)}
+                          >
+                            <CreditCard className="w-4 h-4 mr-1" />
+                            Add Payment
+                          </Button>
+                        )}
+                        {event.status === 'rejected' && (
                           <span className="text-sm text-gray-500">No actions available</span>
                         )}
                       </TableCell>
@@ -350,6 +428,121 @@ const AdminEvents: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Payment Modal */}
+        <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5" />
+                Add Payment for Event
+              </DialogTitle>
+            </DialogHeader>
+            {selectedEvent && (
+              <form onSubmit={handlePaymentSubmit} className="space-y-4">
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <p className="text-sm font-medium text-gray-900">{selectedEvent.customer_name}</p>
+                  <p className="text-sm text-gray-600">{selectedEvent.event_type} • {new Date(selectedEvent.event_date).toLocaleDateString()}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="amount">Total Amount (₱)</Label>
+                    <Input
+                      id="amount"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={paymentForm.amount}
+                      onChange={(e) => setPaymentForm(prev => ({ ...prev, amount: e.target.value }))}
+                      placeholder="0.00"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="payment_method">Payment Method</Label>
+                    <Select
+                      value={paymentForm.payment_method}
+                      onValueChange={(value) => setPaymentForm(prev => ({ ...prev, payment_method: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select method" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="gcash">GCash</SelectItem>
+                        <SelectItem value="paymaya">PayMaya</SelectItem>
+                        <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="status">Payment Status</Label>
+                  <Select
+                    value={paymentForm.status}
+                    onValueChange={(value) => setPaymentForm(prev => ({ ...prev, status: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="not_paid">Not Paid</SelectItem>
+                      <SelectItem value="downpayment">Downpayment</SelectItem>
+                      <SelectItem value="fully_paid">Fully Paid</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="amount_paid">Amount Paid (₱)</Label>
+                    <Input
+                      id="amount_paid"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={paymentForm.amount_paid}
+                      onChange={(e) => setPaymentForm(prev => ({ ...prev, amount_paid: e.target.value }))}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="amount_to_be_paid">Amount to be Paid (₱)</Label>
+                    <Input
+                      id="amount_to_be_paid"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={paymentForm.amount_to_be_paid}
+                      onChange={(e) => setPaymentForm(prev => ({ ...prev, amount_to_be_paid: e.target.value }))}
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowPaymentModal(false)}
+                    disabled={paymentLoading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={paymentLoading}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    {paymentLoading ? 'Adding...' : 'Add Payment'}
+                  </Button>
+                </div>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
     </div>
   );
 };

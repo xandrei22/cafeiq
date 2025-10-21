@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { CreditCard, Smartphone, DollarSign, Loader2, Coffee, Package } from 'lucide-react';
+import { CreditCard, Smartphone, Loader2, Coffee, Package } from 'lucide-react';
 
 const CheckoutButton = () => {
   const { items: cartItems, total, clearCart } = useCart();
@@ -234,7 +234,7 @@ const CheckoutButton = () => {
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="cash" id="cash" />
                 <Label htmlFor="cash" className="flex items-center gap-2 cursor-pointer">
-                  <DollarSign className="h-4 w-4" />
+                  <span className="text-sm font-bold">₱</span>
                   <span>Cash (Pay at Counter)</span>
                 </Label>
               </div>

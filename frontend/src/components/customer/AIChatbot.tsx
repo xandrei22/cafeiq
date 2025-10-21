@@ -172,6 +172,7 @@ const AIChatbot: React.FC<AIChatbotProps> = ({ onClose, resetOnClose = false, us
         const data = await res.json();
         if (data.success && data.sessionId) setSessionId(data.sessionId);
       } catch (e) {
+        console.error('Error starting initial AI chat session:', e);
         console.warn('Falling back to local chatbot (session error):', e);
       }
     }
@@ -210,7 +211,9 @@ const AIChatbot: React.FC<AIChatbotProps> = ({ onClose, resetOnClose = false, us
           activeSession = data.sessionId;
           setSessionId(data.sessionId);
         }
-      } catch {}
+      } catch (e) {
+        console.error('Error starting AI chat session:', e);
+      }
     }
 
     if (activeSession) {
@@ -221,19 +224,84 @@ const AIChatbot: React.FC<AIChatbotProps> = ({ onClose, resetOnClose = false, us
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: outgoing })
         });
-        const data = await res.json();
-        if (data.success && data.response) {
-          const aiMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: data.response.content,
-            timestamp: new Date()
-          };
-          setMessages(prev => [...prev, aiMessage]);
-          setIsLoading(false);
-          return;
+        if (res.ok) {
+          const data = await res.json();
+          // Accept multiple possible response shapes to be robust
+          const content = (data && (
+            data.response?.content ||
+            data.response?.message ||
+            data.message?.content ||
+            data.content
+          )) as string | undefined;
+          if (data?.success && content) {
+            const aiMessage: Message = {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, aiMessage]);
+            setIsLoading(false);
+            return;
+          } else {
+            console.warn('AI message: unexpected payload', data);
+          }
+        } else {
+          console.warn('AI message: non-OK status', res.status, res.statusText);
+        }
+
+        // If not ok or missing response, attempt one automatic session reset + retry
+        try {
+          const startRes = await fetch(`${API_URL}/api/ai-chat/session/start`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ customerId: null, dietaryPreferences: {} })
+          });
+          const startData = await startRes.json();
+          if (startData.success && startData.sessionId) {
+            activeSession = startData.sessionId;
+            setSessionId(startData.sessionId);
+            try {
+              const retryRes = await fetch(`${API_URL}/api/ai-chat/session/${activeSession}/message`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: outgoing })
+              });
+              if (retryRes.ok) {
+                const retryData = await retryRes.json();
+                const retryContent = (retryData && (
+                  retryData.response?.content ||
+                  retryData.response?.message ||
+                  retryData.message?.content ||
+                  retryData.content
+                )) as string | undefined;
+                if (retryData?.success && retryContent) {
+                  const aiMessage: Message = {
+                    id: (Date.now() + 1).toString(),
+                    role: 'assistant',
+                    content: retryContent,
+                    timestamp: new Date()
+                  };
+                  setMessages(prev => [...prev, aiMessage]);
+                  setIsLoading(false);
+                  return;
+                }
+              }
+            } catch (retryErr) {
+              console.error('AI message retry error:', retryErr);
+            }
+          } else {
+            // Clear stale sessionId if we couldn't start a new one
+            setSessionId(null);
+            try { localStorage.removeItem(keySession); } catch {}
+          }
+        } catch (startErr) {
+          console.error('AI session restart error:', startErr);
         }
       } catch (e) {
+        console.error('AI message error:', e);
         console.warn('AI message fallback due to error:', e);
       }
     }
@@ -409,7 +477,7 @@ const AIChatbot: React.FC<AIChatbotProps> = ({ onClose, resetOnClose = false, us
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <Bot className="w-4 h-4 sm:w-6 sm:h-6 flex-shrink-0" />
-              <span className="font-semibold text-sm sm:text-lg truncate">CaféIQ Assistant</span>
+              <span className="font-semibold text-sm sm:text-lg truncate">Cafe Assistant</span>
             </div>
             <button
               onClick={() => {
@@ -470,7 +538,7 @@ const AIChatbot: React.FC<AIChatbotProps> = ({ onClose, resetOnClose = false, us
                         ) : (
                           <>
                             <button
-                              onClick={() => { window.location.href = '/customer-login'; }}
+                              onClick={() => { window.location.href = '/customer-login'; /* keep as last resort; ideally use navigate if router available here */ }}
                               className="text-xs sm:text-sm px-3 py-1.5 border border-[#a87437] text-[#a87437] rounded-lg hover:bg-[#f6efe7]"
                             >
                               Log in to view menu

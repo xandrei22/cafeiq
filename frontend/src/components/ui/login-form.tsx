@@ -32,7 +32,7 @@ export function LoginForm({
       const res = await fetch("/api/customer/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, table: tableFromUrl || undefined }),
         credentials: "include",
       });
       
@@ -46,8 +46,10 @@ export function LoginForm({
         setError(data.message || "Login failed");
       } else {
         // Successful login - redirect
-        if (tableFromUrl) {
-          window.location.href = `/customer/menu?table=${tableFromUrl}`;
+        if (data && data.redirect) {
+          window.location.href = data.redirect;
+        } else if (tableFromUrl) {
+          window.location.href = `/customer/dashboard?table=${tableFromUrl}`;
         } else {
           window.location.href = "/customer/dashboard";
         }
@@ -82,7 +84,7 @@ export function LoginForm({
                 <Input
                   id="email"
                   type="email"
-                  placeholder="m@example.com"
+                  placeholder="Enter your email"
                   required
                   value={email}
                   onChange={e => setEmail(e.target.value)}
@@ -96,6 +98,7 @@ export function LoginForm({
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
+                    placeholder="Enter your password"
                     required
                     value={password}
                     onChange={e => setPassword(e.target.value)}
@@ -124,14 +127,21 @@ export function LoginForm({
                 <Button type="submit" className="w-full bg-[#a87437] hover:bg-[#8f652f] text-white h-10 sm:h-11 text-sm sm:text-base" disabled={loading}>
                   {loading ? "Logging in..." : "Login"}
                 </Button>
-                <Button variant="outline" className="w-full border-[#a87437] text-[#a87437] hover:bg-[#f6efe7] h-10 sm:h-11 text-sm sm:text-base" type="button" disabled={loading} onClick={() => window.location.href = "/api/auth/google"}>
+                <Button variant="outline" className="w-full border-[#a87437] text-[#a87437] hover:bg-[#f6efe7] h-10 sm:h-11 text-sm sm:text-base" type="button" disabled={loading} onClick={() => window.location.href = `/api/auth/google${tableFromUrl ? `?table=${encodeURIComponent(tableFromUrl)}` : ''}` }>
+                  {/* Google "G" logo */}
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="mr-2 h-4 w-4 sm:h-5 sm:w-5">
+                    <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.676 32.658 29.223 36 24 36c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.157 7.961 3.039l5.657-5.657C33.64 6.053 29.083 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20c10.494 0 19.126-7.645 19.126-20 0-1.341-.146-2.651-.415-3.917z"/>
+                    <path fill="#FF3D00" d="M6.306 14.691l6.571 4.817C14.57 16.23 18.879 12 24 12c3.059 0 5.842 1.157 7.961 3.039l5.657-5.657C33.64 6.053 29.083 4 24 4 16.318 4 9.678 8.337 6.306 14.691z"/>
+                    <path fill="#4CAF50" d="M24 44c5.147 0 9.738-1.97 13.238-5.169l-6.114-5.159C29.062 35.983 26.655 37 24 37c-5.202 0-9.642-3.317-11.289-7.946l-6.54 5.04C9.5 39.556 16.22 44 24 44z"/>
+                    <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-1.082 3.095-3.273 5.563-6.178 7.109l.001-.001 6.114 5.159C36.579 41.386 44 36 44 24c0-1.341-.146-2.651-.389-3.917z"/>
+                  </svg>
                   Login with Google
                 </Button>
               </div>
             </div>
             <div className="mt-4 text-center text-xs sm:text-sm">
               Don&apos;t have an account?{" "}
-              <a href="/customer-signup" className="underline underline-offset-4 text-[#a87437] hover:text-[#8f652f]">
+              <a href={`/customer-signup${tableFromUrl ? `?table=${encodeURIComponent(tableFromUrl)}` : ''}`} className="underline underline-offset-4 text-[#a87437] hover:text-[#8f652f]">
                 Sign up
               </a>
             </div>

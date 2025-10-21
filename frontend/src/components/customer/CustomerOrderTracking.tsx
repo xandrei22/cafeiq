@@ -8,7 +8,6 @@ import {
   Coffee, 
   Package, 
   CheckCircle, 
-  DollarSign,
   AlertCircle,
   RefreshCw
 } from 'lucide-react';
@@ -29,7 +28,7 @@ interface Order {
   items: OrderItem[];
   total_price: number;
   status: 'pending' | 'pending_verification' | 'preparing' | 'ready' | 'completed' | 'cancelled';
-  payment_status: 'pending' | 'paid' | 'failed';
+  payment_status: 'pending' | 'pending_verification' | 'paid' | 'failed';
   payment_method: 'cash' | 'gcash' | 'paymaya';
   order_type: 'dine_in' | 'takeout';
   order_time: string;
@@ -51,11 +50,24 @@ const CustomerOrderTracking: React.FC<CustomerOrderTrackingProps> = ({ customerE
 
   useEffect(() => {
     // Initialize Socket.IO connection
-    const newSocket = io(API_URL);
+    const newSocket = io(API_URL, {
+      transports: ['polling', 'websocket'],
+      path: '/socket.io',
+      withCredentials: true,
+      timeout: 30000,
+      forceNew: true,
+      autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
+    });
     setSocket(newSocket);
 
     // Join customer room for real-time updates
-    newSocket.emit('join-customer-room', { customerEmail });
+    const joinRoom = () => newSocket.emit('join-customer-room', { customerEmail });
+    joinRoom();
+    newSocket.on('connect', joinRoom);
+    newSocket.io.on('reconnect', joinRoom);
 
     // Listen for real-time updates
     newSocket.on('order-updated', (updateData) => {
@@ -79,7 +91,7 @@ const CustomerOrderTracking: React.FC<CustomerOrderTrackingProps> = ({ customerE
   const fetchOrders = async () => {
     try {
       setRefreshing(true);
-      const response = await fetch(`${API_URL}/api/customer/orders/${customerEmail}`);
+      const response = await fetch(`${API_URL}/api/customer/orders/${customerEmail}`, { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
@@ -99,7 +111,7 @@ const CustomerOrderTracking: React.FC<CustomerOrderTrackingProps> = ({ customerE
       case 'pending':
         return <ShoppingCart className="w-5 h-5" />;
       case 'pending_verification':
-        return <DollarSign className="w-5 h-5" />;
+        return <span className="text-sm font-bold">₱</span>;
       case 'preparing':
         return <Coffee className="w-5 h-5" />;
       case 'ready':
@@ -284,7 +296,7 @@ const CustomerOrderTracking: React.FC<CustomerOrderTrackingProps> = ({ customerE
                 <div className="mb-6">
                   <h4 className="font-medium text-gray-900 mb-3">Payment Status</h4>
                   <div className="flex items-center gap-3 mb-2">
-                    <DollarSign className="w-5 h-5 text-gray-600" />
+                    <span className="text-gray-600 text-sm font-bold">₱</span>
                     <Badge className={getPaymentStatusColor(order.payment_status)}>
                       {order.payment_status === 'paid' ? 'Paid' :
                        order.payment_status === 'failed' ? 'Failed' :
@@ -333,12 +345,12 @@ const CustomerOrderTracking: React.FC<CustomerOrderTrackingProps> = ({ customerE
                                 
                                 const result = await response.json();
                                 
-                                if (result.success) {
+                                if (response.ok && result.success) {
                                   alert('Receipt uploaded successfully! Your payment is being verified.');
                                   // Refresh orders to update status
-                                  window.location.reload();
+                                  fetchOrders();
                                 } else {
-                                  alert(`Failed to upload receipt: ${result.message}`);
+                                  alert(`Failed to upload receipt: ${result.message || 'Upload failed'}`);
                                 }
                               } catch (error) {
                                 console.error('Receipt upload error:', error);

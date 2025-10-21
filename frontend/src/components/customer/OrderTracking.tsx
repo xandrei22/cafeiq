@@ -8,7 +8,7 @@ interface OrderStatus {
   items: any[];
   totalPrice: number;
   status: 'pending' | 'pending_verification' | 'confirmed' | 'preparing' | 'ready' | 'completed' | 'cancelled';
-  paymentStatus: 'pending' | 'paid' | 'failed';
+  paymentStatus: 'pending' | 'pending_verification' | 'paid' | 'failed';
   orderType: 'dine_in' | 'takeout';
   queuePosition: number;
   estimatedReadyTime: string;

@@ -7,7 +7,7 @@ const crypto = require('crypto');
 // Customer login controller
 async function login(req, res) {
     try {
-        const { email, password } = req.body;
+        const { email, password, table, redirect } = req.body;
 
         // Find customer by email
         const [customers] = await db.query(
@@ -40,6 +40,20 @@ async function login(req, res) {
             role: 'customer'
         };
 
+        // Optionally set a post-login redirect when coming from a QR/table link
+        const frontendBase = process.env.FRONTEND_URL || 'http://localhost:5173';
+        let postLoginRedirect = undefined;
+        if (redirect) {
+            postLoginRedirect = `${frontendBase}${String(redirect).startsWith('/') ? '' : '/'}${redirect}`;
+        } else if (table) {
+            req.session.tableNumber = String(table);
+            postLoginRedirect = `${frontendBase}/customer/dashboard?table=${encodeURIComponent(String(table))}`;
+        }
+
+        if (postLoginRedirect) {
+            req.session.postLoginRedirect = postLoginRedirect;
+        }
+
         res.json({
             success: true,
             user: {
@@ -48,7 +62,8 @@ async function login(req, res) {
                 email: customer.email,
                 name: customer.full_name,
                 role: 'customer'
-            }
+            },
+            redirect: postLoginRedirect || null
         });
 
     } catch (error) {

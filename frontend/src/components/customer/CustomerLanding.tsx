@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../ui/button";
 import { CustomerNavbar } from "../ui/CustomerNavbar";
@@ -9,8 +9,17 @@ import Footer from "../ui/Footer";
 
 export default function CustomerLanding() {
   const [showMenu, setShowMenu] = useState(false);
-  const [showChat, setShowChat] = useState(false);
+  const [tableNumber, setTableNumber] = useState<string>('');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Detect table number from URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const tableFromUrl = urlParams.get('table');
+    if (tableFromUrl) {
+      setTableNumber(tableFromUrl);
+    }
+  }, []);
   
   return (
     <div className="min-h-screen flex flex-col bg-[#f5f5f5]">
@@ -36,24 +45,51 @@ export default function CustomerLanding() {
           <p className="text-xl sm:text-2xl md:text-3xl text-[#6B5B5B] mb-12 max-w-4xl">
             CaféIQ powers seamless service at Mauricio's Cafe & Bakery. Enjoy faster orders, digital payments, and personalized experiences — all in one smart system.
           </p>
+          
+          {/* Table detection banner intentionally not displayed on landing */}
           <div className="flex flex-col sm:flex-row gap-5 justify-center lg:justify-start">
-            <Button
-              size="lg"
-              className="bg-[#a87437] hover:bg-[#8f652f] text-white px-10 py-5 text-2xl font-semibold rounded-full shadow-[0_16px_36px_rgba(0,0,0,0.28)] flex items-center gap-4"
-              onClick={() => navigate("/login")}
-            >
-              Order Now
-              <ArrowRight className="h-6 w-6" />
-            </Button>
-            <Button
-              variant="outline"
-              size="lg"
-              className="border-[#a87437] text-[#a87437] bg-white px-10 py-5 text-2xl font-semibold rounded-full shadow-[0_14px_30px_rgba(0,0,0,0.22)] hover:bg-[#f6efe7]"
-              onClick={() => setShowMenu(true)}
-            >
-              View Menu
-            </Button>
+            {tableNumber ? (
+              <>
+                <Button
+                  size="lg"
+                  className="bg-[#a87437] hover:bg-[#8f652f] text-white px-16 py-6 text-3xl font-semibold rounded-full shadow-[0_20px_40px_rgba(0,0,0,0.35)] flex items-center gap-5"
+                  onClick={() => navigate(`/guest/menu?table=${tableNumber}`)}
+                >
+                  Order Now
+                  <ArrowRight className="h-8 w-8" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="border-[#a87437] text-[#a87437] bg-white px-8 py-6 text-3xl font-semibold rounded-full shadow-[0_18px_35px_rgba(0,0,0,0.28)] hover:bg-[#f6efe7]"
+                  onClick={() => setShowMenu(true)}
+                >
+                  View Menu
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  size="lg"
+                  className="bg-[#a87437] hover:bg-[#8f652f] text-white px-20 py-8 text-4xl font-semibold rounded-full shadow-[0_24px_48px_rgba(0,0,0,0.4)] flex items-center gap-6"
+                  onClick={() => navigate('/visit-mauricio')}
+                >
+                  Order Now
+                  <ArrowRight className="h-10 w-10" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="border-[#a87437] text-[#a87437] bg-white px-12 py-8 text-4xl font-semibold rounded-full shadow-[0_22px_44px_rgba(0,0,0,0.32)] hover:bg-[#f6efe7]"
+                  onClick={() => setShowMenu(true)}
+                >
+                  View Menu
+                </Button>
+              </>
+            )}
           </div>
+          
+          {/* Secondary action removed: Track Order moved to menu page */}
         </div>
         
         {/* Right Side - Drinks Image */}
@@ -79,8 +115,8 @@ export default function CustomerLanding() {
         {/* Darker warm overlay to improve text contrast */}
         <div className="absolute inset-0 bg-gradient-to-r from-[#8a5f2d]/80 via-[#b88347]/65 to-black/20"></div>
 
-        {/* Text block (perfectly centered vertically, left aligned, with increased left margin) */}
-        <div className="relative z-10 max-w-4xl text-left text-white h-full flex flex-col justify-center ml-4 md:ml-16 lg:ml-28 xl:ml-40 mt-2 md:mt-3 lg:mt-4">
+        {/* Text block (perfectly centered vertically, right aligned, positioned more centrally) */}
+        <div className="relative z-10 max-w-4xl text-right text-white h-full flex flex-col justify-center ml-8 md:ml-16 lg:ml-24 xl:ml-32 mr-8 md:mr-16 lg:mr-24 xl:mr-32 mt-2 md:mt-3 lg:mt-4">
           <h2 className="text-3xl md:text-5xl font-bold mb-8">About Mauricio's Cafe and Bakery</h2>
 
           <p className="text-3xl md:text-4xl font-semibold mb-6 text-white/95">Hello! Hope all is well with you!</p>
@@ -193,8 +229,8 @@ export default function CustomerLanding() {
         </div>
       </section>
 
-      {/* Why You'll Love Us Section - Full Page */}
-      <section id="why-love-us" className="min-h-screen bg-[#d4a77c] flex items-center py-16 px-4">
+      {/* Offers Section - Full Page */}
+      <section id="why-love-us" className="min-h-screen bg-[#f0d9b8] flex items-center py-16 px-4">
         <div className="mx-auto max-w-7xl w-full">
           {/* Our Promise Tag */}
           <div className="flex justify-center mb-4">

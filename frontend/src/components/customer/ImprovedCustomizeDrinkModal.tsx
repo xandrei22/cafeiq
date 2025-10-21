@@ -39,7 +39,7 @@ const ImprovedCustomizeDrinkModal: React.FC<ImprovedCustomizeDrinkModalProps> = 
   const basePrice = item.price;
 
   // API base
-  const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
+  const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000';
 
   // Dynamic options sourced from inventory
   const [milkOptions, setMilkOptions] = useState<string[]>([]);
@@ -352,6 +352,13 @@ const ImprovedCustomizeDrinkModal: React.FC<ImprovedCustomizeDrinkModalProps> = 
                     defaultQuantity={option.defaultQuantity}
                     maxQuantity={option.maxQuantity}
                     pricePerUnit={option.pricePerUnit}
+                    styleVariant={
+                      option.category?.toLowerCase().includes('milk') ? 'sky' :
+                      option.category?.toLowerCase().includes('sweet') ? 'rose' :
+                      option.category?.toLowerCase().includes('spice') ? 'orange' :
+                      option.category?.toLowerCase().includes('flavor') ? 'violet' :
+                      'amber'
+                    }
                     selected={customizations[option.id]?.selected || false}
                     onToggle={(selected) => handleCustomizationChange(
                       option.id, 
@@ -393,7 +400,8 @@ const ImprovedCustomizeDrinkModal: React.FC<ImprovedCustomizeDrinkModalProps> = 
                   syrup: getSyrupType(),
                   toppings: getToppings(),
                   ice: temperature === 'Iced',
-                  size: size === 'Large' ? 'large' : 'medium'
+                  size: size === 'Large' ? 'large' : 'medium',
+                  sugarLevel: 0
                 }}
                 className="w-full h-64"
               />

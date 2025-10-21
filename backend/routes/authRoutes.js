@@ -28,9 +28,37 @@ router.post('/customer/forgot-password', customerController.forgotPassword);
 router.post('/customer/reset-password', customerController.resetPassword);
 
 // Google OAuth - Start authentication
-router.get('/auth/google',
-    passport.authenticate('google', { scope: ['profile', 'email'] })
-);
+// Preserve optional table and redirect params through session/state so we can
+// send customers back to the right place after logging in from a QR link.
+router.get('/auth/google', (req, res, next) => {
+    try {
+        const frontendBase = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const { table, redirect } = req.query || {};
+
+        // Stash desired redirect in the session before starting OAuth
+        if (redirect) {
+            // Absolute or relative path support; only allow same-origin frontend
+            req.session.postLoginRedirect = `${frontendBase}${String(redirect).startsWith('/') ? '' : '/'}${redirect}`;
+        } else if (table) {
+            // If table provided, send back to dashboard with table preserved
+            req.session.postLoginRedirect = `${frontendBase}/customer/dashboard?table=${encodeURIComponent(String(table))}`;
+        }
+
+        // Also store table separately for potential downstream usage
+        if (table) {
+            req.session.tableNumber = String(table);
+        }
+
+        // Kick off Google auth and pass table in OAuth state for redundancy
+        return passport.authenticate('google', {
+            scope: ['profile', 'email'],
+            state: table ? String(table) : undefined
+        })(req, res, next);
+    } catch (err) {
+        console.error('Error initializing Google OAuth:', err);
+        return res.redirect((process.env.FRONTEND_URL || 'http://localhost:5173') + '/login?error=GOOGLE_AUTH_ERROR');
+    }
+});
 
 // Google OAuth - Callback
 router.get('/auth/google/callback',
@@ -67,13 +95,29 @@ router.get('/auth/google/callback',
                 console.log('Google OAuth successful - Session set:', req.session.customerUser);
 
                 req.session.save(() => {
+                    const frontendBase = process.env.FRONTEND_URL || 'http://localhost:5173';
                     const isNew = user && user.isNewGoogleUser;
                     console.log('Redirecting user - isNew:', isNew);
-                    if (isNew) {
-                        res.redirect('http://localhost:5173/customer/dashboard?google=new');
-                    } else {
-                        res.redirect('http://localhost:5173/customer/dashboard');
+
+                    // Prefer explicit redirect captured prior to OAuth
+                    let redirectUrl = req.session.postLoginRedirect;
+
+                    // Fallbacks: use OAuth state (table), or default dashboard
+                    if (!redirectUrl) {
+                        const oauthStateTable = req.query && req.query.state;
+                        if (oauthStateTable) {
+                            redirectUrl = `${frontendBase}/customer/dashboard?table=${encodeURIComponent(String(oauthStateTable))}`;
+                        }
                     }
+
+                    if (!redirectUrl) {
+                        redirectUrl = isNew ? `${frontendBase}/customer/dashboard?google=new` : `${frontendBase}/customer/dashboard`;
+                    }
+
+                    // Cleanup transient session keys
+                    delete req.session.postLoginRedirect;
+
+                    res.redirect(redirectUrl);
                 });
             });
         })(req, res, next);

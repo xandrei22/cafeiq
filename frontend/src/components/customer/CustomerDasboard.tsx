@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthContext";
-import { Star, ShoppingBag, Monitor, ShoppingCart } from "lucide-react";
+import { Star, ShoppingBag, Monitor } from "lucide-react";
 import { useCart } from "../../contexts/CartContext";
 
 interface DashboardData {
@@ -63,97 +63,66 @@ export default function CustomerDasboard() {
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
       console.log('Fetching dashboard data for user ID:', user.id);
       
-      // Use the same approach as the loyalty section - fetch loyalty points directly
-      const [loyaltyRes, ordersRes] = await Promise.all([
-        fetch(`${API_URL}/api/customers/${user.id}/loyalty`, {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
+      // Use the dedicated dashboard API endpoint
+      const response = await fetch(`${API_URL}/api/customer/dashboard?customerId=${user.id}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      console.log('Dashboard API response status:', response.status);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Dashboard API response data:', data);
+        
+        if (data.success) {
+          // Calculate points from last order
+          let pointsFromLastOrder = 0;
+          if (data.orders && data.orders.recent && data.orders.recent.length > 0) {
+            const lastOrder = data.orders.recent[0];
+            pointsFromLastOrder = Math.floor(lastOrder.total || 0);
           }
-        }),
-        fetch(`${API_URL}/api/customer/orders/${user.email}`, {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
+          
+          // Calculate orders this month
+          const currentMonth = new Date().getMonth();
+          const currentYear = new Date().getFullYear();
+          let ordersThisMonth = 0;
+          if (data.orders && data.orders.recent) {
+            ordersThisMonth = data.orders.recent.filter((order: any) => {
+              const orderDate = new Date(order.orderTime);
+              return orderDate.getMonth() === currentMonth && orderDate.getFullYear() === currentYear;
+            }).length;
           }
-        })
-      ]);
-      
-      console.log('Loyalty API response status:', loyaltyRes.status);
-      console.log('Orders API response status:', ordersRes.status);
-      console.log('User data:', { id: user.id, email: user.email, name: user.name });
-      
-      let loyaltyPoints = 0;
-      let totalOrders = 0;
-      let pointsFromLastOrder = 0;
-      
-      if (loyaltyRes.ok) {
-        const loyaltyData = await loyaltyRes.json();
-        console.log('Loyalty API response data:', loyaltyData);
-        loyaltyPoints = loyaltyData.loyalty_points || 0;
-      }
-      
-      if (ordersRes.ok) {
-        const ordersData = await ordersRes.json();
-        console.log('Orders API response data:', ordersData);
-        if (ordersData.success && ordersData.orders) {
-          totalOrders = ordersData.orders.length;
-          // Calculate points from last order (simplified)
-          if (ordersData.orders.length > 0) {
-            const lastOrder = ordersData.orders[0];
-            pointsFromLastOrder = Math.floor(lastOrder.total_price || lastOrder.total || 0);
-          }
+          
+          // Set dashboard data with real values
+          setDashboardData({
+            loyaltyPoints: data.loyalty?.points || 0,
+            pointsFromLastOrder,
+            totalOrders: data.orders?.total || 0,
+            ordersThisMonth,
+            currentOrder: data.orders?.current && data.orders.current.length > 0 ? data.orders.current[0] : null,
+            recentOrders: data.orders?.recent || [],
+            popularItems: data.favorites || []
+          });
+        } else {
+          throw new Error('Dashboard API returned unsuccessful response');
         }
       } else {
-        console.error('Orders API failed:', ordersRes.status, ordersRes.statusText);
-        // Try alternative approach - check if orders exist by customer name
-        const altOrdersRes = await fetch(`${API_URL}/api/orders`, {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        });
-        
-        if (altOrdersRes.ok) {
-          const altOrdersData = await altOrdersRes.json();
-          console.log('Alternative orders API response:', altOrdersData);
-          if (altOrdersData.success && altOrdersData.orders) {
-            // Filter orders by customer name or email
-            const customerOrders = altOrdersData.orders.filter(order => 
-              order.customer_name === user.name || 
-              order.customer_email === user.email ||
-              order.customer_id === user.id
-            );
-            totalOrders = customerOrders.length;
-            if (customerOrders.length > 0) {
-              const lastOrder = customerOrders[0];
-              pointsFromLastOrder = Math.floor(lastOrder.total_price || lastOrder.total || 0);
-            }
-          }
-        }
+        console.error('Dashboard API failed:', response.status, response.statusText);
+        throw new Error(`Dashboard API failed: ${response.status}`);
       }
-      
-      setDashboardData({
-        loyaltyPoints,
-        pointsFromLastOrder,
-        totalOrders,
-        ordersThisMonth: totalOrders, // Simplified for now
-        currentOrder: null,
-        recentOrders: [],
-        popularItems: []
-      });
       
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
-      // Set fallback data for testing
+      // Set fallback data with zeros instead of dummy data
       setDashboardData({
-        loyaltyPoints: 100,
-        pointsFromLastOrder: 50,
-        totalOrders: 3,
-        ordersThisMonth: 1,
+        loyaltyPoints: 0,
+        pointsFromLastOrder: 0,
+        totalOrders: 0,
+        ordersThisMonth: 0,
         currentOrder: null,
         recentOrders: [],
         popularItems: []
@@ -189,25 +158,29 @@ export default function CustomerDasboard() {
 
   const fetchRedeemableItems = async () => {
     try {
+      if (!user?.id) return;
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-      const response = await fetch(`${API_URL}/api/loyalty/redeemable-items`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setRedeemableItems(data.items);
-        }
+      const response = await fetch(`${API_URL}/api/loyalty/available-rewards/${user.id}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        // 401 or any error -> hide section by clearing items
+        setRedeemableItems([]);
+        return;
       }
+      const data = await response.json();
+      const rewards = (data?.availableRewards || []) as any[];
+      const normalized = rewards.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        points: r.points_required,
+        image: r.image_url || '/images/mc2.jpg'
+      }));
+      setRedeemableItems(normalized);
     } catch (error) {
       console.error('Error fetching redeemable items:', error);
-      // Fallback to sample data if API fails
-      setRedeemableItems([
-        { id: 1, name: "Cappuccino", points: 500, image: "/images/mc2.jpg" },
-        { id: 2, name: "Latte", points: 450, image: "/images/mc3.jpg" },
-        { id: 3, name: "Americano", points: 300, image: "/images/mc4.jpg" },
-        { id: 4, name: "Espresso", points: 250, image: "/images/mc2.jpg" },
-        { id: 5, name: "Mocha", points: 600, image: "/images/mc3.jpg" },
-        { id: 6, name: "Macchiato", points: 550, image: "/images/mc4.jpg" }
-      ]);
+      // Hide section on error
+      setRedeemableItems([]);
     }
   };
 
@@ -248,7 +221,7 @@ export default function CustomerDasboard() {
     setRedeeming(item.id);
     try {
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-      const response = await fetch(`${API_URL}/api/loyalty/redeem`, {
+      const response = await fetch(`${API_URL}/api/loyalty/redeem-reward`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -256,32 +229,49 @@ export default function CustomerDasboard() {
         credentials: 'include',
         body: JSON.stringify({
           customerId: user.id,
-          itemId: item.id,
-          points: item.points
+          rewardId: item.id,
+          orderId: null,
+          redemptionProof: 'Claimed through customer dashboard',
+          staffId: null
         })
       });
 
       const data = await response.json();
       if (data.success) {
-        alert(`Successfully redeemed ${item.name} for ${item.points} points!`);
+        alert(`Successfully claimed "${item.name}"! Your claim code is ${data.claimCode}. Show this code to staff to redeem.`);
         // Refresh dashboard data to update points
         fetchDashboardData();
       } else {
-        alert(`Failed to redeem item: ${data.message}`);
+        alert(`Failed to claim reward: ${data.error || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error('Error redeeming points:', error);
-      alert('Failed to redeem item. Please try again.');
+      console.error('Error claiming reward:', error);
+      alert('Failed to claim reward. Please try again.');
     } finally {
       setRedeeming(null);
     }
   };
 
+  // Check table access
+  const params = new URLSearchParams(window.location.search);
+  const tableParam = params.get('table');
+  
+  // Accept either simple numbers (1-6) or any non-empty table parameter (for QR codes)
+  const hasTableAccess = tableParam && tableParam.trim() !== '';
+
   const handleAddToCart = (item: any) => {
+    if (!hasTableAccess) {
+      try {
+        // eslint-disable-next-line no-alert
+        alert('To add items to cart, please scan the table QR to get access.');
+      } catch (_) {}
+      return;
+    }
+
     addToCart({
       id: item.id.toString(),
       name: item.name,
-      price: item.price,
+      price: item.base_price || item.price,
       quantity: 1,
       customizations: [],
       notes: ''
@@ -360,29 +350,33 @@ export default function CustomerDasboard() {
             </div>
             {/* Bottom Row: Redeem Points and Popular Items */}
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6 w-full">
-                          {/* Redeem with your points */}
-            <div className="bg-white rounded-2xl shadow-xl border-2 border-[#a87437] p-4 sm:p-6 hover:shadow-2xl transition-shadow duration-300">
+              {/* Redeem with your points (always visible; shows empty state when none) */}
+              <div className="bg-white rounded-2xl shadow-xl border-2 border-[#a87437] p-4 sm:p-6 hover:shadow-2xl transition-shadow duration-300">
                 <h2 className="text-xl sm:text-2xl font-bold text-[#6B5B5B] mb-4">Redeem with your points</h2>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {redeemableItems.map((item) => (
-                    <div key={item.id} className="flex flex-col items-center p-3 border-2 border-[#a87437] rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-300">
-                      <img 
-                        src={item.image} 
-                        alt={item.name}
-                        className="h-16 w-16 object-cover rounded-full mb-3"
-                      />
-                      <h3 className="font-semibold text-[#6B5B5B] text-sm mb-1">{item.name}</h3>
-                      <p className="text-xs text-gray-500 mb-3">{item.points} points</p>
-                      <button
-                        onClick={() => handleRedeemPoints(item)}
-                        disabled={(dashboardData?.loyaltyPoints || 0) < item.points || redeeming === item.id}
-                        className="bg-[#a87437] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#8f652f] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {redeeming === item.id ? 'Redeeming...' : 'Redeem'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                {redeemableItems.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">No rewards available to redeem right now</div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {redeemableItems.map((item) => (
+                      <div key={item.id} className="flex flex-col items-center p-3 border-2 border-[#a87437] rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-300">
+                        <img 
+                          src={item.image}
+                          alt={item.name}
+                          className="h-16 w-16 object-cover rounded-full mb-3"
+                        />
+                        <h3 className="font-semibold text-[#6B5B5B] text-sm mb-1">{item.name}</h3>
+                        <p className="text-xs text-gray-500 mb-3">{item.points} points</p>
+                        <button
+                          onClick={() => handleRedeemPoints(item)}
+                          disabled={(dashboardData?.loyaltyPoints || 0) < item.points || redeeming === item.id}
+                          className="bg-[#a87437] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#8f652f] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {redeeming === item.id ? 'Redeeming...' : 'Redeem'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
                           {/* Popular items */}
@@ -393,7 +387,16 @@ export default function CustomerDasboard() {
                     popularItems.map((item) => (
                       <div key={item.id} className="flex items-center gap-4 p-3 hover:bg-gray-50 rounded-lg transition-colors">
                         <img
-                          src={item.image_url || "/images/mc2.jpg"}
+                          src={(() => {
+                            if (item.image_url) {
+                              const path = item.image_url.trim();
+                              if (/^https?:\/\//i.test(path)) return path;
+                              const withSlash = path.startsWith('/') ? path : `/${path}`;
+                              const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+                              return `${API_URL}${withSlash}`;
+                            }
+                            return "/images/mc2.jpg";
+                          })()}
                           alt={item.name}
                           className="h-12 w-12 object-cover rounded-full"
                         />
@@ -402,16 +405,21 @@ export default function CustomerDasboard() {
                           <p className="text-sm text-gray-500">₱{item.base_price || item.display_price}</p>
                         </div>
                         <button
-                          className="bg-[#a87437] text-white p-2 rounded-lg hover:bg-[#8f652f] transition-colors"
+                          className={`p-2 rounded-lg transition-colors ${
+                            hasTableAccess 
+                              ? "bg-[#a87437] text-white hover:bg-[#8f652f] cursor-pointer" 
+                              : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                          }`}
                           onClick={() => handleAddToCart({
                             id: item.id,
                             name: item.name,
                             price: item.base_price || item.display_price
                           })}
-                          title={`Add ${item.name} to cart`}
-                          aria-label={`Add ${item.name} to cart`}
+                          disabled={!hasTableAccess}
+                          title={hasTableAccess ? `Add ${item.name} to cart` : "Table access required to add items to cart"}
+                          aria-label={hasTableAccess ? `Add ${item.name} to cart` : "Table access required"}
                         >
-                          <ShoppingCart className="h-4 w-4" />
+                          <img src="/images/shopping-cart.png" alt="Cart" className="h-4 w-4 object-contain invert" />
                         </button>
                       </div>
                     ))
@@ -437,12 +445,17 @@ export default function CustomerDasboard() {
                           <p className="text-sm text-gray-500">₱{item.price}</p>
                         </div>
                         <button
-                          className="bg-[#a87437] text-white p-2 rounded-lg hover:bg-[#8f652f] transition-colors"
+                          className={`p-2 rounded-lg transition-colors ${
+                            hasTableAccess 
+                              ? "bg-[#a87437] text-white hover:bg-[#8f652f] cursor-pointer" 
+                              : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                          }`}
                           onClick={() => handleAddToCart(item)}
-                          title={`Add ${item.name} to cart`}
-                          aria-label={`Add ${item.name} to cart`}
+                          disabled={!hasTableAccess}
+                          title={hasTableAccess ? `Add ${item.name} to cart` : "Table access required to add items to cart"}
+                          aria-label={hasTableAccess ? `Add ${item.name} to cart` : "Table access required"}
                         >
-                          <ShoppingCart className="h-4 w-4" />
+                          <img src="/images/shopping-cart.png" alt="Cart" className="h-4 w-4 object-contain invert" />
                         </button>
                       </div>
                     ))

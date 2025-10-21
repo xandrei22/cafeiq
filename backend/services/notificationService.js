@@ -281,13 +281,17 @@ class NotificationService {
     /**
      * Mark notification as read
      */
-    async markAsRead(notificationId, userId) {
+    async markAsRead(notificationId, userId, userType) {
         try {
             await db.query(`
                 UPDATE notifications 
                 SET is_read = TRUE 
-                WHERE id = ? AND (user_id = ? OR user_id IS NULL)
-            `, [notificationId, userId]);
+                WHERE id = ? AND (
+                    (user_id = ? AND user_type = ?) 
+                    OR (user_id IS NULL AND user_type = ?)
+                    OR (user_id IS NULL AND user_type IS NULL)
+                )
+            `, [notificationId, userId, userType, userType]);
 
             return { success: true };
 

@@ -8,7 +8,6 @@ import {
   Coffee, 
   CheckCircle, 
   Package, 
-  DollarSign,
   Search,
   RefreshCw,
   Play,
@@ -46,7 +45,7 @@ const StaffPOS: React.FC = () => {
   const [showOrderDetails, setShowOrderDetails] = useState(false);
   const [, setSocket] = useState<Socket | null>(null);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
   useEffect(() => {
     // Initialize Socket.IO connection
@@ -285,7 +284,7 @@ const StaffPOS: React.FC = () => {
                               onClick={() => verifyPayment(order.orderId, 'cash')}
                               className="bg-amber-600 hover:bg-amber-700 flex-1 text-xs"
                             >
-                              <DollarSign className="w-3 h-3 mr-1" />
+                              <span className="text-xs font-bold mr-1">₱</span>
                               Verify Payment
                             </Button>
                           )}
@@ -500,7 +499,7 @@ const StaffPOS: React.FC = () => {
                         <Button
                           size="sm"
                           onClick={() => {
-                            const receiptUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/receipts/receipt/${selectedOrder.orderId}`;
+                            const receiptUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/receipts/receipt/${selectedOrder.orderId}`;
                             window.open(receiptUrl, '_blank');
                           }}
                           className="bg-blue-600 hover:bg-blue-700 text-white"
@@ -525,7 +524,7 @@ const StaffPOS: React.FC = () => {
                       onClick={() => verifyPayment(selectedOrder.orderId, 'cash')}
                       className="bg-amber-600 hover:bg-amber-700 flex-1"
                     >
-                      <DollarSign className="w-4 h-4 mr-2" />
+                      <span className="text-sm font-bold mr-2">₱</span>
                       Verify Payment
                     </Button>
                   )}

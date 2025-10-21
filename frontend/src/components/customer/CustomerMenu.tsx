@@ -6,6 +6,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Badge } from '../ui/badge';
 import { 
   Search, 
   Filter, 
@@ -26,6 +27,7 @@ interface MenuItem {
   category: string;
   image_url?: string;
   is_available: boolean;
+  allow_customization?: boolean;
 }
 
 const CustomerMenu: React.FC = () => {
@@ -41,6 +43,7 @@ const CustomerMenu: React.FC = () => {
   const [sortBy, setSortBy] = useState<string>('name');
   const [customizationModal, setCustomizationModal] = useState<{ isOpen: boolean; item: any | null }>({ isOpen: false, item: null });
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
 
   // Try to open GCash/PayMaya app via deep links with fallbacks
   const openDigitalWalletApp = (method: 'gcash' | 'paymaya') => {
@@ -95,7 +98,7 @@ const CustomerMenu: React.FC = () => {
       formData.append('receipt', receiptFile);
       formData.append('orderId', orderId);
 
-      const response = await fetch(`${window.location.origin.replace(':5173', ':5001')}/api/customer/upload-receipt`, {
+      const response = await fetch('/api/customer/upload-receipt', {
         method: 'POST',
         credentials: 'include',
         body: formData,
@@ -120,7 +123,7 @@ const CustomerMenu: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      const response = await fetch(`${window.location.origin.replace(':5173', ':5001')}/api/customer/menu`, {
+      const response = await fetch('/api/guest/menu', {
         credentials: 'include'
       });
       
@@ -136,7 +139,8 @@ const CustomerMenu: React.FC = () => {
           ...item,
           price: parseFloat(item.base_price || item.price) || 0,
           description: item.description || '',
-          image_url: item.image_url || null
+          image_url: item.image_url || null,
+          allow_customization: item.allow_customization === 1 || item.allow_customization === true // Only true if explicitly 1 or true
         }));
         
         setMenuItems(processedMenuItems);
@@ -160,7 +164,7 @@ const CustomerMenu: React.FC = () => {
   // Fetch categories separately
   const fetchCategories = async () => {
     try {
-      const response = await fetch(`${window.location.origin.replace(':5173', ':5001')}/api/menu/categories`, {
+      const response = await fetch('/api/menu/categories', {
         credentials: 'include'
       });
       if (response.ok) {
@@ -176,13 +180,32 @@ const CustomerMenu: React.FC = () => {
 
   // Initial data fetch and WebSocket setup
   useEffect(() => {
-    // Initialize Socket.IO connection
+    // Initialize Socket.IO connection (use backend API_URL, include cookies, limit retries)
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-    const newSocket = io(API_URL);
+    const newSocket = io(API_URL, {
+      transports: ['polling', 'websocket'],
+      path: '/socket.io',
+      withCredentials: true,
+      timeout: 30000,
+      forceNew: true,
+      autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
+    });
     setSocket(newSocket);
 
     // Join customer room for real-time updates
-    newSocket.emit('join-customer-room', { customerEmail: user?.email });
+    const joinRoom = () => newSocket.emit('join-customer-room', { customerEmail: user?.email });
+    joinRoom();
+    newSocket.on('connect', joinRoom);
+    newSocket.io.on('reconnect', joinRoom);
+    newSocket.on('connect_error', () => {
+      // Stop aggressive reconnect spam after a few failed attempts
+      if ((newSocket as any).io && (newSocket as any).io.attempts > 5) {
+        (newSocket as any).io.reconnection(false);
+      }
+    });
 
     // Listen for real-time updates
     newSocket.on('menu-updated', (data) => {
@@ -268,9 +291,17 @@ const CustomerMenu: React.FC = () => {
 
   // Handle add to cart
   const handleAddToCart = (item: any) => {
-    // Show warning if no table access but still allow adding to cart
+    // Block adding to cart when there is no valid table access
     if (!hasValidTableAccess) {
-      console.warn('No table access detected. Order may not be processed correctly.');
+      console.warn('Blocked add to cart - no table access detected.');
+      // Provide a simple UX notice; replace with your toast system if available
+      try {
+        // eslint-disable-next-line no-alert
+        window.alert('To add items to cart, please scan the table QR to get access.');
+      } catch (_) {
+        /* no-op in non-browser environments */
+      }
+      return; // Stop here
     }
 
     if (item.customization) {
@@ -319,52 +350,52 @@ const CustomerMenu: React.FC = () => {
   // Get table number from URL parameter
   const urlParams = new URLSearchParams(window.location.search);
   const tableFromUrl = urlParams.get('table');
-  const tableNumber = tableFromUrl ? parseInt(tableFromUrl) : null;
   
-  // Check if user has valid table access (1-6)
-  const hasValidTableAccess = tableNumber && tableNumber >= 1 && tableNumber <= 6;
+  // Check if user has valid table access
+  // Accept either simple numbers (1-6) or any non-empty table parameter (for QR codes)
+  const hasValidTableAccess = tableFromUrl && tableFromUrl.trim() !== '';
 
   return (
-    <div className="min-h-screen bg-[#f5f5f5]">
+    <div className="min-h-screen bg-[#f5f5f5] pb-12">
       <div className="space-y-4 sm:space-y-6 mx-2 sm:mx-4 lg:mx-6 pt-4">
         {/* Header */}
-        <div className="space-y-4 sm:space-y-6 px-2 sm:px-4 lg:px-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Menu</h1>
-            <p className="text-sm sm:text-base text-gray-600 mt-1">Explore our delicious selection of coffee and beverages</p>
+        <div className="space-y-4 sm:space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Menu</h1>
+              <p className="text-sm sm:text-base text-gray-600 mt-1">Explore our delicious selection of coffee and beverages</p>
+            </div>
           </div>
-        </div>
-        
-        {/* Table Number Display */}
-        {hasValidTableAccess && (
-          <div className="mt-4 inline-flex items-center px-4 py-2 bg-[#a87437] text-white rounded-lg shadow-md">
-            <span className="text-sm font-medium">Table {tableNumber}</span>
-            <div className="ml-2 w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-          </div>
-        )}
-        
-        {/* Warning for users without table access */}
-        {!hasValidTableAccess && (
-          <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-yellow-800">
-                  Table Access Required
-                </h3>
-                <div className="mt-2 text-sm text-yellow-700">
-                  <p>To place an order, please scan the QR code on your table. You can still browse our menu, but ordering requires table access.</p>
+          
+          {/* Table Number Display */}
+          {hasValidTableAccess && (
+            <div className="mt-4 inline-flex items-center px-4 py-2 bg-[#a87437] text-white rounded-lg shadow-md">
+              <span className="text-sm font-medium">Table Access Active</span>
+              <div className="ml-2 w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            </div>
+          )}
+          
+          {/* Warning for users without table access */}
+          {!hasValidTableAccess && (
+            <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-yellow-800">
+                    Table Access Required
+                  </h3>
+                  <div className="mt-2 text-sm text-yellow-700">
+                    <p>To place an order, please scan the QR code on your table. You can still browse our menu, but ordering requires table access.</p>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
 
       {/* Search and Filters */}
       <div className="space-y-4">
@@ -398,18 +429,28 @@ const CustomerMenu: React.FC = () => {
           {/* View Toggle Buttons */}
           <div className="flex gap-2">
             <Button 
-              variant="outline" 
+              variant={viewMode === 'grid' ? 'default' : 'outline'}
               size="sm"
-              className="h-12 w-12 border-2 border-[#a87437] rounded-xl hover:bg-[#a87437]/5"
+              onClick={() => setViewMode('grid')}
+              className={`h-12 w-12 border-2 border-[#a87437] rounded-xl ${
+                viewMode === 'grid' 
+                  ? 'bg-[#a87437] text-white hover:bg-[#8f652f]' 
+                  : 'hover:bg-[#a87437]/5'
+              }`}
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
               </svg>
             </Button>
             <Button 
-              variant="outline" 
+              variant={viewMode === 'list' ? 'default' : 'outline'}
               size="sm"
-              className="h-12 w-12 border-2 border-[#a87437] rounded-xl hover:bg-[#a87437]/5"
+              onClick={() => setViewMode('list')}
+              className={`h-12 w-12 border-2 border-[#a87437] rounded-xl ${
+                viewMode === 'list' 
+                  ? 'bg-[#a87437] text-white hover:bg-[#8f652f]' 
+                  : 'hover:bg-[#a87437]/5'
+              }`}
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
@@ -421,88 +462,170 @@ const CustomerMenu: React.FC = () => {
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="border-2 border-[#a87437] shadow-xl hover:shadow-2xl transition-shadow duration-300">
+        <Card className="border-2 border-gray-300 shadow-xl hover:shadow-2xl transition-shadow duration-300">
           <CardContent className="p-6 text-center">
-            <div className="text-3xl font-bold text-[#6B5B5B] mb-2">{totalItems}</div>
-            <div className="text-sm text-[#6B5B5B]">Total Items</div>
+            <div className="text-3xl font-bold text-gray-700 mb-2">{totalItems}</div>
+            <div className="text-sm text-gray-600">Total Items</div>
           </CardContent>
         </Card>
-        <Card className="border-2 border-green-500 shadow-xl hover:shadow-2xl transition-shadow duration-300">
+        <Card className="border-2 border-gray-300 shadow-xl hover:shadow-2xl transition-shadow duration-300">
           <CardContent className="p-6 text-center">
-            <div className="text-3xl font-bold text-green-600 mb-2">{availableItems}</div>
-            <div className="text-sm text-[#6B5B5B]">Available Items</div>
+            <div className="text-3xl font-bold text-gray-700 mb-2">{availableItems}</div>
+            <div className="text-sm text-gray-600">Available Items</div>
           </CardContent>
         </Card>
-        <Card className="border-2 border-purple-500 shadow-xl hover:shadow-2xl transition-shadow duration-300">
+        <Card className="border-2 border-gray-300 shadow-xl hover:shadow-2xl transition-shadow duration-300">
           <CardContent className="p-6 text-center">
-            <div className="text-3xl font-bold text-purple-600 mb-2">{popularItems}</div>
-            <div className="text-sm text-[#6B5B5B]">Popular</div>
+            <div className="text-3xl font-bold text-gray-700 mb-2">{popularItems}</div>
+            <div className="text-sm text-gray-600">Popular</div>
           </CardContent>
         </Card>
-        <Card className="border-2 border-blue-500 shadow-xl hover:shadow-2xl transition-shadow duration-300">
+        <Card className="border-2 border-gray-300 shadow-xl hover:shadow-2xl transition-shadow duration-300">
           <CardContent className="p-6 text-center">
-            <div className="text-3xl font-bold text-blue-600 mb-2">{totalCategories}</div>
-            <div className="text-sm text-[#6B5B5B]">Categories</div>
+            <div className="text-3xl font-bold text-gray-700 mb-2">{totalCategories}</div>
+            <div className="text-sm text-gray-600">Categories</div>
           </CardContent>
         </Card>
       </div>
 
       {/* Menu Items by Category */}
       {filteredItems.length === 0 ? (
-        <Card className="border-2 border-[#a87437] shadow-xl">
-          <CardContent className="text-center py-16">
-            <Coffee className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-[#6B5B5B] mb-2">No items found</h3>
-            <p className="text-gray-500 mb-4">
-              Try adjusting your search or filters
-            </p>
-            <Button 
-              onClick={clearFilters} 
-              variant="outline"
-              className="border-2 border-[#a87437]/30 hover:bg-[#a87437]/5"
-            >
-              Clear All Filters
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-8">
-          {(() => {
-            // Group items by category
-            const groupedItems = filteredItems.reduce((acc, item) => {
-              const category = item.category || 'Other';
-              if (!acc[category]) {
-                acc[category] = [];
-              }
-              acc[category].push(item);
-              return acc;
-            }, {} as Record<string, MenuItem[]>);
+          <Card className="border-2 border-[#a87437] shadow-xl">
+            <CardContent className="text-center py-16">
+              <Coffee className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-[#6B5B5B] mb-2">No items found</h3>
+              <p className="text-gray-500 mb-4">
+                Try adjusting your search or filters
+              </p>
+              <Button 
+                onClick={clearFilters} 
+                variant="outline"
+                className="border-2 border-[#a87437]/30 hover:bg-[#a87437]/5"
+              >
+                Clear All Filters
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-8">
+            {(() => {
+              // Group items by category
+              const groupedItems = filteredItems.reduce((acc, item) => {
+                const category = item.category || 'Other';
+                if (!acc[category]) {
+                  acc[category] = [];
+                }
+                acc[category].push(item);
+                return acc;
+              }, {} as Record<string, MenuItem[]>);
 
-            return Object.entries(groupedItems).map(([category, items]) => (
-              <div key={category} className="space-y-4">
-                {/* Category Header */}
-                <h2 className="text-2xl font-bold text-[#a87437] border-b-2 border-[#a87437]/30 pb-2">
-                  {category}
-                </h2>
-                
-                {/* Items List - Single Column Layout */}
-                <div className="space-y-4">
-                  {items.map((item) => (
-                    <MenuItem
-                      key={item.id}
-                      item={item}
-                      onAddToCart={handleAddToCart}
-                      hasTableAccess={hasValidTableAccess}
-                    />
-                  ))}
+              return Object.entries(groupedItems).map(([category, items]) => (
+                <div key={category} className="space-y-4">
+                  {/* Category Header */}
+                  <h2 className="text-2xl font-bold text-[#a87437] border-b-2 border-[#a87437]/30 pb-2">
+                    {category}
+                  </h2>
+                  
+                  {/* Items Display - Grid or List View */}
+                  {viewMode === 'grid' ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                      {items.map((item) => (
+                        <Card key={item.id} className="bg-white border shadow-lg hover:shadow-xl transition-shadow duration-300 h-[480px] flex flex-col">
+                          <CardContent className="p-0 flex flex-col h-full">
+                            {/* Image - With padding from card edges */}
+                            <div className="h-40 w-full flex-shrink-0 flex items-center justify-center overflow-hidden bg-gray-100 p-3">
+                              {item.image_url && item.image_url !== '' && item.image_url !== 'null' && item.image_url !== 'undefined' ? (
+                                <div className="w-full h-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                                  <img
+                                    src={item.image_url}
+                                    alt={item.name}
+                                    className="w-full h-full object-contain"
+                                    loading="lazy"
+                                    onError={(e) => {
+                                      const target = e.target as HTMLImageElement;
+                                      target.style.display = 'none';
+                                      const fallback = target.parentElement?.nextElementSibling as HTMLElement;
+                                      if (fallback) {
+                                        fallback.classList.remove('hidden');
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              ) : null}
+                              <div className={`w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg ${item.image_url && item.image_url !== '' && item.image_url !== 'null' && item.image_url !== 'undefined' ? 'hidden' : ''}`}>
+                                <div className="text-center">
+                                  <div className="w-16 h-16 mx-auto mb-3 bg-white rounded-full flex items-center justify-center shadow-sm border-2 border-gray-200">
+                                    <span className="text-2xl">🍽️</span>
+                                  </div>
+                                  <p className="text-sm text-gray-600 font-medium">No Image Available</p>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Content */}
+                            <div className="p-4 flex-1 flex flex-col min-h-0">
+                              <h3 className="text-lg font-semibold text-[#3f3532] mb-1 line-clamp-2">
+                                {item.name}
+                              </h3>
+                              {item.category && (
+                                <p className="text-sm text-gray-500 mb-2">{item.category}</p>
+                              )}
+                              <p className="text-gray-600 text-sm mb-3 line-clamp-2">
+                                {item.description}
+                              </p>
+                              
+                              {/* Price */}
+                              <div className="mb-2">
+                                <span className="text-xl font-bold text-[#a87437]">
+                                  ₱{Number(item.price || item.base_price || 0).toFixed(2)}
+                                </span>
+                              </div>
+                              
+                              {/* Action Buttons */}
+                              <div className="flex flex-col gap-2 mt-auto pt-2">
+                                {item.allow_customization && (
+                                  <Button
+                                    onClick={() => setCustomizationModal({ isOpen: true, item: item })}
+                                    disabled={!hasValidTableAccess || item.is_available === false}
+                                    size="sm"
+                                    variant="outline"
+                                    className="w-full text-xs border-[#a87437] text-[#a87437] hover:bg-[#a87437] hover:text-white"
+                                  >
+                                    Customize
+                                  </Button>
+                                )}
+                                <Button
+                                  onClick={() => handleAddToCart(item)}
+                                  disabled={!hasValidTableAccess || item.is_available === false}
+                                  size="sm"
+                                  className="w-full bg-[#a87437] hover:bg-[#8f652f] text-white text-xs"
+                                >
+                                  Add to Cart
+                                </Button>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {items.map((item) => (
+                        <MenuItem
+                          key={item.id}
+                          item={item}
+                          onAddToCart={handleAddToCart}
+                          hasTableAccess={hasValidTableAccess}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ));
-          })()}
-        </div>
-      )}
-
-
+              ));
+            })()}
+          </div>
+        )}
+      </div>
 
       {/* Cart Modal */}
       <CustomerCartModal 
@@ -531,10 +654,9 @@ const CustomerMenu: React.FC = () => {
               // Redirect to login with table parameter preserved
               const urlParams = new URLSearchParams(window.location.search);
               const tableFromUrl = urlParams.get('table');
-              const loginUrl = tableFromUrl ? `/login?table=${tableFromUrl}` : '/login';
-              
-              alert('Please log in to place an order. You will be redirected to the login page.');
-              window.location.href = loginUrl;
+              const loginUrl = tableFromUrl ? `/customer-login?table=${tableFromUrl}` : '/customer-login';
+              alert('Please log in to place an order.');
+              navigate(loginUrl);
               return;
             }
 
@@ -569,7 +691,7 @@ const CustomerMenu: React.FC = () => {
             if (paymentMethod === 'gcash' || paymentMethod === 'paymaya') {
               console.log('Digital payment selected:', paymentMethod);
 
-              const response = await fetch(`${window.location.origin.replace(':5173', ':5001')}/api/customer/checkout`, {
+              const response = await fetch('/api/customer/checkout', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -597,7 +719,7 @@ const CustomerMenu: React.FC = () => {
               }
             } else {
               // For cash payments, proceed normally
-              const response = await fetch(`${window.location.origin.replace(':5173', ':5001')}/api/customer/checkout`, {
+              const response = await fetch('/api/customer/checkout', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -613,12 +735,12 @@ const CustomerMenu: React.FC = () => {
                 closeCartModal();
                 alert(`Order placed successfully! Order ID: ${result.orderId}`);
                 
-                // Add a small delay to ensure backend status update is processed
+                // Trigger a custom event to refresh orders data without page reload
                 setTimeout(() => {
-                  // Trigger a refresh of orders if we're on the orders page
-                  if (window.location.pathname.includes('/customer/orders')) {
-                    window.location.reload();
-                  }
+                  // Dispatch custom event to refresh orders data
+                  window.dispatchEvent(new CustomEvent('orderPlaced', { 
+                    detail: { orderId: result.orderId } 
+                  }));
                 }, 500);
               } else {
                 alert(`Failed to place order: ${result.message}`);
@@ -681,8 +803,6 @@ const CustomerMenu: React.FC = () => {
           </div>
         </div>
       )}
-      
-      </div>
     </div>
   );
 };

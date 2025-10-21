@@ -24,12 +24,14 @@ const devPaymentRoutes = require('./routes/devPaymentRoutes');
 const adminInventoryRoutes = require('./routes/adminInventoryRoutes');
 const customerOrderRoutes = require('./routes/customerOrderRoutes');
 const customerRoutes = require('./routes/customerRoutes');
+const guestOrderRoutes = require('./routes/guestOrderRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const receiptRoutes = require('./routes/receiptRoutes');
 const staffRoutes = require('./routes/staffRoutes');
 const userSettingsRoutes = require('./routes/userSettingsRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const lowStockRoutes = require('./routes/lowStockRoutes');
+const cleanupRoutes = require('./routes/cleanupRoutes');
 const db = require('./config/db');
 const passport = require('passport');
 const passportConfig = require('./controllers/passport');
@@ -43,7 +45,8 @@ const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
         origin: process.env.FRONTEND_URL || "http://localhost:5173",
-        methods: ["GET", "POST"]
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 const PORT = process.env.PORT || 5001;
@@ -177,8 +180,10 @@ io.on('connection', (socket) => {
 
     // Join order room for real-time updates
     socket.on('join-order-room', (orderId) => {
-        socket.join(`order-${orderId}`);
-        console.log(`Client ${socket.id} joined order room: ${orderId}`);
+        // Accept either raw id or already prefixed value
+        const room = String(orderId).startsWith('order-') ? String(orderId) : `order-${orderId}`;
+        socket.join(room);
+        console.log(`Client ${socket.id} joined order room: ${room}`);
     });
 
     // Join staff room for POS updates
@@ -280,7 +285,7 @@ app.get('/api/test-export', async(req, res) => {
         console.log('Testing export packages...');
 
         // Test write-excel-file
-        const writeExcelFile = require('write-excel-file');
+        const writeExcelFile = require('write-excel-file/node');
         const testData = [
             ['Name', 'Value'],
             ['Test', 123]
@@ -315,7 +320,7 @@ app.get('/api/test-export', async(req, res) => {
 
 app.get('/api/test-excel', async(req, res) => {
     try {
-        const writeExcelFile = require('write-excel-file');
+        const writeExcelFile = require('write-excel-file/node');
         const testData = [
             ['Order ID', 'Customer', 'Amount'],
             ['TEST-001', 'Test Customer', 100.50],
@@ -374,6 +379,7 @@ app.use('/api/staff', staffRoutes);
 app.use('/api/settings', userSettingsRoutes);
 app.use('/api/customer', customerOrderRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/guest', guestOrderRoutes);
 app.use('/api/orders', orderRoutes); // Add the missing order routes
 app.use('/api', eventRoutes);
 app.use('/api/menu', menuRoutes);
@@ -384,6 +390,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/receipts', receiptRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/low-stock', lowStockRoutes);
+app.use('/api/cleanup', cleanupRoutes);
 
 // Use development or production payment routes based on environment
 if (process.env.NODE_ENV === 'development') {
@@ -512,6 +519,21 @@ server.listen(PORT, () => {
         })();
     } else {
         console.log('⏸ Scheduled notification service disabled by DISABLE_BACKGROUND_JOBS=1');
+    }
+
+    // Start daily cleanup job for old cancelled orders (guarded)
+    if (process.env.DISABLE_BACKGROUND_JOBS !== '1') {
+        (async() => {
+            try {
+                const { startCleanupJob } = require('./scripts/setup-daily-cleanup');
+                startCleanupJob();
+                console.log(`🧹 Daily cleanup job started`);
+            } catch (error) {
+                console.error('❌ Failed to start daily cleanup job:', error.message);
+            }
+        })();
+    } else {
+        console.log('⏸ Daily cleanup job disabled by DISABLE_BACKGROUND_JOBS=1');
     }
 }).on('error', (err) => {
     console.error('Server error:', {

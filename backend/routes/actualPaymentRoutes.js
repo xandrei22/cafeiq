@@ -370,19 +370,24 @@ router.get('/status/:orderId', async(req, res) => {
     }
 });
 
-// Generate payment status QR for customer tracking
+// Generate payment status QR for customer tracking (signed URL)
 router.post('/status-qr/:orderId', async(req, res) => {
     try {
         const { orderId } = req.params;
         const { tableNumber } = req.body;
 
         const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-        const statusUrl = tableNumber ?
+        // Build unsigned URL first
+        const unsignedUrl = new URL(tableNumber ?
             `${baseUrl}/payment-status/${orderId}?table=${tableNumber}` :
-            `${baseUrl}/payment-status/${orderId}`;
+            `${baseUrl}/payment-status/${orderId}`);
+
+        // Sign URL with short expiry to limit brute force
+        const { signUrl } = require('../utils/urlSigner');
+        const signedUrl = signUrl(unsignedUrl.toString(), { expiresInSeconds: 900 }); // 15 minutes
 
         const QRCode = require('qrcode');
-        const qrCodeDataURL = await QRCode.toDataURL(statusUrl, {
+        const qrCodeDataURL = await QRCode.toDataURL(signedUrl, {
             errorCorrectionLevel: 'M',
             type: 'image/png',
             quality: 0.92,
@@ -396,7 +401,7 @@ router.post('/status-qr/:orderId', async(req, res) => {
         res.json({
             success: true,
             qrCode: qrCodeDataURL,
-            url: statusUrl,
+            url: signedUrl,
             orderId: orderId
         });
 

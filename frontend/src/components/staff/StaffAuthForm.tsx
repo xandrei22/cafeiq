@@ -43,6 +43,13 @@ export function StaffAuthForm({ className, ...props }: React.ComponentProps<"div
         setError(data.message || "Login failed");
       } else {
         console.log('Staff login successful, checking for alerts');
+        try {
+          if (data?.user) {
+            localStorage.setItem('staffUser', JSON.stringify(data.user));
+          } else if (data?.email) {
+            localStorage.setItem('staffUser', JSON.stringify({ email: data.email }));
+          }
+        } catch {}
         // Check for alerts immediately after successful login
         await checkLowStockAlert();
         navigate("/staff/dashboard");
@@ -58,12 +65,12 @@ export function StaffAuthForm({ className, ...props }: React.ComponentProps<"div
   return (
     <div className={cn("min-h-screen flex", className)} {...props}>
       {/* Left Side - Welcome/Sign In */}
-      <div className="flex-1 bg-[#6B5B5B] flex flex-col items-center justify-center text-white p-8">
+      <div className="flex-1 bg-[#A87437] flex flex-col items-center justify-center text-white p-8">
         <div className="max-w-md text-center space-y-6">
           <div className="mb-8">
-            <img src="/images/logo.png" alt="CaféIQ Logo" className="mx-auto h-20 w-auto" />
+            <img src="/images/whiteicon_bg.png" alt="CaféIQ Logo" className="mx-auto h-56 w-auto" />
           </div>
-          <h1 className="text-4xl font-light mb-4">CaféIQ Staff Portal</h1>
+          <h1 className="text-4xl font-bold mb-4">CaféIQ Staff Portal</h1>
           <p className="text-lg text-white/80 mb-8">
             Access order management, POS system, and daily operations at Mauricio's Cafe and Bakery
           </p>
@@ -75,7 +82,7 @@ export function StaffAuthForm({ className, ...props }: React.ComponentProps<"div
           <CardContent className="p-0">
             <form onSubmit={handleLogin} className="space-y-6">
               <div className="text-center mb-8">
-                <h2 className="text-3xl font-light text-[#6B5B5B] mb-2">Welcome back Staff!</h2>
+                <h2 className="text-3xl font-light text-[#A87437] mb-2">Welcome back Staff!</h2>
                 <p className="text-sm text-gray-600">Login to your CaféIQ account</p>
               </div>
 
@@ -96,7 +103,7 @@ export function StaffAuthForm({ className, ...props }: React.ComponentProps<"div
                     placeholder="Enter your username or email"
                     value={usernameOrEmail}
                     onChange={(e) => setUsernameOrEmail(e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-100 border-0 rounded-none focus:bg-white focus:ring-1 focus:ring-[#6B5B5B]"
+                    className="w-full px-4 py-3 bg-gray-100 border-0 rounded-none focus:bg-white focus:ring-1 focus:ring-[#A87437]"
                     required
                   />
                 </div>
@@ -112,7 +119,7 @@ export function StaffAuthForm({ className, ...props }: React.ComponentProps<"div
                       placeholder="Enter your password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-100 border-0 rounded-none focus:bg-white focus:ring-1 focus:ring-[#6B5B5B] pr-12"
+                      className="w-full px-4 py-3 bg-gray-100 border-0 rounded-none focus:bg-white focus:ring-1 focus:ring-[#A87437] pr-12"
                       required
                     />
                     <button
@@ -128,7 +135,7 @@ export function StaffAuthForm({ className, ...props }: React.ComponentProps<"div
                     </button>
                   </div>
                   <div className="flex justify-end mt-2">
-                    <Link to="/staff/forgot-password" className="text-sm text-[#6B5B5B] hover:underline">
+                    <Link to="/staff/forgot-password" className="text-sm text-[#A87437] hover:underline">
                       Forgot your password?
                     </Link>
                   </div>
@@ -138,7 +145,7 @@ export function StaffAuthForm({ className, ...props }: React.ComponentProps<"div
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-[#6B5B5B] hover:bg-[#5A4A4A] text-white py-3 px-4 rounded-full font-medium transition-colors"
+                className="w-full bg-[#A87437] hover:bg-[#946a33] text-white py-3 px-4 rounded-full font-medium transition-colors"
               >
                 {loading ? "Signing in..." : "LOGIN"}
               </Button>

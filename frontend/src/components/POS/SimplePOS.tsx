@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Coffee, Plus, Minus, X, Settings, Trash2, ShoppingCart, MoreVertical } from "lucide-react";
+import { Coffee, Plus, Minus, Settings, Trash2, MoreVertical } from "lucide-react";
 import UnifiedCustomizeModal from "../customer/UnifiedCustomizeModal";
 import { toast } from "sonner";
 
@@ -54,12 +54,11 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
 		orderType: 'dine_in',
 		paymentMethod: 'cash'
 	});
-	const [customizeModalOpen, setCustomizeModalOpen] = useState(false);
-	const [selectedItemForCustomization, setSelectedItemForCustomization] = useState<MenuItem | null>(null);
+    const [customizeModalOpen, setCustomizeModalOpen] = useState(false);
+    const [selectedItemForCustomization, setSelectedItemForCustomization] = useState<MenuItem | null>(null);
 	const [showMoreMenu, setShowMoreMenu] = useState(false);
 	const moreMenuRef = useRef<HTMLDivElement>(null);
 
-	const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
   useEffect(() => {
 		// Only fetch menu when we need to render it
@@ -67,6 +66,8 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
 			fetchMenuItems();
 		}
 	}, [sidebarOnly]);
+
+  // customization helpers are declared below (single definition)
 
 	// Handle click outside to close more menu
 	useEffect(() => {
@@ -152,7 +153,7 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
 
 			console.log('Sending order data:', orderData);
 
-			const response = await fetch(`${API_URL}/api/orders`, {
+			const response = await fetch('/api/orders', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -185,7 +186,7 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
   // When only the sidebar is requested, render it directly
   if (sidebarOnly) {
     return (
-      <div className="w-full bg-gray-50 p-4 sm:p-6 flex flex-col self-start">
+      <div className="w-full bg-gray-50 p-4 sm:p-6 self-start">
         {/* Customer Information */}
         <Card className="mb-4 bg-white border shadow-lg">
           <CardHeader>
@@ -204,7 +205,7 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-2 block">Order Type *</label>
-                <div className="flex space-x-4">
+						<div className="flex flex-wrap gap-3 sm:gap-4">
                   <label className="flex items-center space-x-2">
                     <input
                       type="radio"
@@ -252,57 +253,57 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
         </Card>
 
         {/* Cart Panel */}
-        <Card className="flex-1 flex flex-col bg-white border shadow-lg">
-          <CardHeader className="flex-shrink-0">
-            <CardTitle className="flex items-center gap-2 text-[#3f3532]">
-              <ShoppingCart className="w-5 h-5 text-[#a87437]" />
+					{/* eslint-disable-next-line react/forbid-dom-props */}
+					<div className="bg-white border shadow-lg lg:overflow-hidden p-0 m-0 h-48 relative">
+          {/* eslint-disable-next-line react/forbid-dom-props */}
+          <div className="flex-shrink-0 pr-3 pl-0 py-1 -my-1 -mt-2 p-0 m-0">
+            {/* eslint-disable-next-line react/forbid-dom-props */}
+            <div className="flex items-center gap-2 text-[#3f3532] -ml-2 text-sm font-medium p-0 m-0 leading-tight">
+              <img src="/images/shopping-cart.png" alt="Cart" className="w-4 h-4 object-contain invert" />
               Cart ({cart.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 flex flex-col min-h-0" style={{ minHeight: '500px' }}>
-            <div className="flex-1 overflow-y-auto mb-4">
+            </div>
+          </div>
+						{/* eslint-disable-next-line react/forbid-dom-props */}
+						<div className="px-2 pb-12 pt-0 m-0 h-36 overflow-y-auto">
+							<div className="pr-2 pb-0 h-auto max-h-none">
               {cart.length === 0 ? (
-                <div className="text-center text-[#6B5B5B] py-12">
-                  <Coffee className="w-12 h-12 mx-auto mb-3 text-[#a87437]/30" />
-                  <p className="text-sm">Cart is empty</p>
-                  <p className="text-xs text-[#6B5B5B]/60">Add items to get started</p>
+                <div className="text-center text-[#6B5B5B] py-0 leading-none">
+                  <Coffee className="w-3 h-3 mx-auto mb-0 text-[#a87437]/30" />
+                  <p className="text-[10px] leading-none my-0.5">Empty</p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-1 pb-0">
                   {cart.map((item) => (
-                    <div key={item.cartItemId} className="p-4 bg-white rounded-lg border space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <h4 className="font-medium text-sm">{item.name}</h4>
-                          <div className="flex items-center gap-2 mt-1">
+                    <div key={item.cartItemId} className="p-2 bg-white rounded border space-y-0 w-full leading-none">
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex-1 min-w-0 mr-2">
+                          <h4 className="font-medium text-sm truncate leading-tight my-0.5">{item.name}</h4>
+                          <div className="flex items-center gap-2 mt-0">
                             {item.customPrice && item.customPrice !== item.base_price ? (
                               <>
-                                <span className="text-sm text-gray-500 line-through">₱{item.base_price}</span>
-                                <span className="text-sm text-blue-600 font-medium">₱{item.customPrice}</span>
+                                <span className="text-sm text-gray-500 line-through leading-tight">₱{item.base_price}</span>
+                                <span className="text-sm text-blue-600 font-medium leading-tight">₱{item.customPrice}</span>
                               </>
                             ) : (
-                              <span className="text-sm text-gray-600">₱{item.base_price}</span>
+                              <span className="text-sm text-gray-600 leading-tight">₱{item.base_price}</span>
                             )}
                             {item.customizations && (
-                              <Badge variant="secondary" className="text-xs">Customized</Badge>
+                              <Badge variant="secondary" className="text-[10px] leading-none px-0.5 py-0.5">Customized</Badge>
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button size="sm" variant="outline" onClick={() => updateQuantity(item.cartItemId, item.quantity - 1)} className="h-8 w-8 p-0">
+                        <div className="flex items-center gap-0.5 flex-shrink-0">
+                          <Button size="sm" variant="outline" onClick={() => updateQuantity(item.cartItemId, item.quantity - 1)} className="h-5 w-5 p-0 min-h-5 min-w-5">
                             <Minus className="w-3 h-3" />
                           </Button>
-                          <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
-                          <Button size="sm" variant="outline" onClick={() => updateQuantity(item.cartItemId, item.quantity + 1)} className="h-8 w-8 p-0">
+                          <span className="w-5 text-center text-xs font-medium leading-none">{item.quantity}</span>
+                          <Button size="sm" variant="outline" onClick={() => updateQuantity(item.cartItemId, item.quantity + 1)} className="h-5 w-5 p-0 min-h-5 min-w-5">
                             <Plus className="w-3 h-3" />
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => removeFromCart(item.cartItemId)} className="h-8 w-8 p-0 text-red-600 hover:text-red-700">
-                            <X className="w-3 h-3" />
                           </Button>
                         </div>
                       </div>
                       {item.notes && (
-                        <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                        <div className="text-xs text-gray-600 bg-gray-50 p-0.5 rounded leading-none">
                           <strong>Notes:</strong> {item.notes}
                         </div>
                       )}
@@ -313,28 +314,31 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
             </div>
 
             {/* Summary */}
-            <div className="flex-shrink-0 border-t pt-4 space-y-4">
-              <div className="bg-blue-50 p-3 rounded-lg">
-                <div className="flex justify-between text-lg font-semibold text-blue-900">
-                  <span>Total Amount:</span>
+            {/* eslint-disable-next-line react/forbid-dom-props */}
+            <div className="border-t pt-0 space-y-0 pb-0 absolute bottom-0 left-0 right-0 h-fit">
+              {/* eslint-disable-next-line react/forbid-dom-props */}
+              <div className="bg-blue-50 p-2 rounded mb-0 leading-tight">
+                <div className="flex justify-between text-sm font-semibold text-blue-900 leading-tight m-0">
+                  <span>Total:</span>
                   <span>₱{getTotalPrice().toFixed(2)}</span>
                 </div>
-                <p className="text-xs text-blue-600 mt-1">
+                <p className="text-xs text-blue-600 mt-0 leading-tight m-0">
                   {cart.length} item{cart.length !== 1 ? 's' : ''} in cart
                 </p>
               </div>
-              <div className="flex gap-2">
-                <Button onClick={clearCart} variant="outline" className="flex-1 h-10 border-[#a87437] text-[#6B5B5B] hover:bg-[#a87437]/10" disabled={cart.length === 0}>
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Clear Cart
+						{/* eslint-disable-next-line react/forbid-dom-props */}
+						<div className="flex gap-1 flex-col sm:flex-row mt-0 mb-0 p-2 absolute bottom-0 left-0 right-0 h-auto -mt-2 pb-2">
+							<Button onClick={clearCart} variant="outline" className="h-6 border-[#a87437] text-[#6B5B5B] hover:bg-[#a87437]/10 w-full sm:flex-1 text-xs min-h-6 leading-tight" disabled={cart.length === 0}>
+                  <Trash2 className="w-3 h-3 mr-1" />
+                  Clear
                 </Button>
-                <Button onClick={processOrder} disabled={cart.length === 0 || !customerInfo.name.trim() || (customerInfo.orderType === 'dine_in' && (!customerInfo.tableNumber || customerInfo.tableNumber < 1 || customerInfo.tableNumber > 6))} className="flex-1 h-10 bg-[#a87437] hover:bg-[#a87437]/90 text-white">
-                  Process Order
+							<Button onClick={processOrder} disabled={cart.length === 0 || !customerInfo.name.trim() || (customerInfo.orderType === 'dine_in' && (!customerInfo.tableNumber || customerInfo.tableNumber < 1 || customerInfo.tableNumber > 6))} className="h-6 bg-[#a87437] hover:bg-[#a87437]/90 text-white w-full sm:flex-1 text-xs min-h-6 leading-tight">
+                  Process
                 </Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Payment Processor - rendered under cart */}
         {children && (
@@ -352,7 +356,7 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
 			setError(null);
 			
 			// Fetch menu items that are visible in POS
-			const response = await fetch(`${API_URL}/api/menu/pos`);
+			const response = await fetch('/api/menu/pos');
 			const data = await response.json();
 			
 			if (data.success && data.menu_items) {
@@ -378,13 +382,23 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
 	// Get unique categories
 	const categories = ["All", ...Array.from(new Set(menuItems.map(item => item.category)))];
 
-	// Filter menu items based on search and category
-	const filteredItems = menuItems.filter(item => {
-		const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-							item.description.toLowerCase().includes(searchTerm.toLowerCase());
-		const matchesCategory = selectedCategory === "All" || item.category === selectedCategory;
-		return matchesSearch && matchesCategory;
-	});
+	// Filter and sort menu items based on search and category
+	const filteredItems = menuItems
+		.filter(item => {
+			const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+								item.description.toLowerCase().includes(searchTerm.toLowerCase());
+			const matchesCategory = selectedCategory === "All" || item.category === selectedCategory;
+			return matchesSearch && matchesCategory;
+		})
+		.sort((a, b) => {
+			// First sort by category alphabetically
+			const categoryComparison = a.category.localeCompare(b.category);
+			if (categoryComparison !== 0) {
+				return categoryComparison;
+			}
+			// Then sort by name alphabetically within each category
+			return a.name.localeCompare(b.name);
+		});
 
 	const addToCart = (item: MenuItem | any, quantity: number = 1) => {
 		// Check if this is a customized item (has customizations or customPrice)
@@ -466,18 +480,22 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
 	};
 
 
-	const openCustomizeModal = (item: MenuItem) => {
-		setSelectedItemForCustomization(item);
-		setCustomizeModalOpen(true);
-	};
+    const openCustomizeModal = (item: MenuItem) => {
+        setSelectedItemForCustomization(item);
+        setCustomizeModalOpen(true);
+    };
 
-	const handleCustomizationComplete = (customizedItem: any) => {
-		if (customizedItem) {
-			addToCart(customizedItem, 1);
-		}
-		setCustomizeModalOpen(false);
-		setSelectedItemForCustomization(null);
-	};
+    const closeCustomizeModal = () => {
+        setCustomizeModalOpen(false);
+        setSelectedItemForCustomization(null);
+    };
+
+    const handleCustomizedItem = (customizedItem: any) => {
+        // Add the customized item to cart
+        addToCart(customizedItem, 1);
+        closeCustomizeModal();
+        toast.success(`${customizedItem.name} customized and added to cart!`, { position: 'top-center' });
+    };
 
 
 	if (loading) {
@@ -506,10 +524,10 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
 		);
 	}
 
-    return (
-        <div className={`flex ${hideSidebar ? '' : 'h-screen'}`}>
-			{/* Left Side - Menu */}
-				<div className={`${hideSidebar ? 'w-full' : 'flex-[1_1_auto]'} p-4 sm:p-6 overflow-auto`}>
+		return (
+			<div className={`flex flex-col lg:flex-row ${hideSidebar ? '' : 'lg:h-screen'}`}>
+				{/* Left Side - Menu */}
+					<div className={`${hideSidebar ? 'w-full' : 'flex-[1_1_auto]'} p-4 sm:p-6 ${hideSidebar ? '' : 'lg:overflow-auto'}`}>
 				<div className="w-full">
 					{/* Header */}
 					<div className="mb-6">
@@ -525,7 +543,7 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
 								className="h-10 bg-white border focus:border-[#a87437]"
 							/>
 						</div>
-						<div className="flex gap-2">
+						<div className="flex gap-2 flex-wrap">
 							{categories.map((category) => (
 								<Button
 									key={category}
@@ -588,129 +606,196 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
 					{/* Menu Items */}
 					<div className="w-full">
 						{viewMode === "grid" && (
-							<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-								{filteredItems.map((item) => (
-									<Card
-										key={item.id}
-										className="relative hover:shadow-xl transition-all duration-300 border shadow-lg bg-white hover:border-[#a87437] h-full"
-									>
-										{/* Badges top-right */}
-										<div className="absolute right-3 top-3 flex flex-col items-end gap-2">
-											<Badge variant="outline" className="text-xs">{item.category}</Badge>
-										</div>
-										<CardContent className="pt-4 pr-4 pb-3 pl-4 flex flex-col h-full min-h-[200px]">
-											{/* Content: image and info on the left */}
-											<div className="flex w-full">
-												<div className="flex-1 min-w-0 flex gap-4">
-													<div className="h-28 w-28 md:h-32 md:w-32 flex items-center justify-center overflow-hidden rounded-lg bg-gray-100 flex-shrink-0">
-														{item.image_url ? (
-															<img
-																src={`${API_URL}${item.image_url}`}
-																alt={item.name}
-																className="w-full h-full object-contain p-1"
-																onError={(e) => {
-																	e.currentTarget.style.display = 'none';
-																	e.currentTarget.nextElementSibling?.classList.remove('hidden');
-																}}
-															/>
-														) : (
-															<div className="w-full h-full flex items-center justify-center">
-																<Coffee className="h-10 w-10 text-[#a87437]" />
-															</div>
-														)}
-													</div>
-													<div className="min-w-0 mt-4">
-														<h3 className="text-left text-lg sm:text-xl font-semibold text-[#3f3532] mb-1 line-clamp-2">{item.name}</h3>
-														<p className="text-left text-gray-600 text-sm mb-2 line-clamp-2">{item.description}</p>
-														<span className="text-base sm:text-lg font-semibold text-amber-700">₱{Number(item.base_price).toFixed(2)}</span>
-													</div>
-												</div>
-											</div>
+							<div className="space-y-6">
+								{(() => {
+									// Group items by category
+									const groupedItems = filteredItems.reduce((groups, item) => {
+										const category = item.category;
+										if (!groups[category]) {
+											groups[category] = [];
+										}
+										groups[category].push(item);
+										return groups;
+									}, {} as Record<string, typeof filteredItems>);
 
-											{/* Bottom-right actions */}
-											<div className="mt-auto flex items-end justify-end gap-2 mb-0">
-												<Button
-													size="sm"
-													variant="outline"
-													onClick={() => openCustomizeModal(item)}
-								disabled={false}
-													className="text-xs border-[#a87437] text-[#6B5B5B] hover:bg-[#a87437]/10"
-													title="Customize Item"
-												>
-													<Settings className="w-3 h-3 mr-1" />
-													Customize
-												</Button>
-												<Button
-													size="sm"
-													variant="default"
-													onClick={() => addToCart(item, 1)}
-								disabled={false}
-													className="text-xs bg-[#a87437] hover:bg-[#a87437]/90 text-white"
-												>
-													Add to Cart
-												</Button>
+									// Sort categories alphabetically
+									const sortedCategories = Object.keys(groupedItems).sort();
+
+									return sortedCategories.map((category) => (
+										<div key={category} className="space-y-3">
+											{/* Category Header */}
+											<div className="space-y-2">
+												<h3 className="text-lg font-bold text-[#a87437]">{category}</h3>
+												<div className="h-px bg-[#a87437]/30"></div>
 											</div>
-										</CardContent>
-									</Card>
-								))}
+											
+											{/* Items Grid */}
+											<div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-5 gap-2 sm:gap-3">
+												{groupedItems[category].map((item) => (
+													<Card
+														key={item.id}
+														className="relative hover:shadow-lg transition-all duration-300 border shadow-md bg-white hover:border-[#a87437] h-full"
+													>
+														<CardContent className="p-2 sm:p-3 flex flex-col h-full min-h-[140px] sm:min-h-[160px]">
+															{/* Image */}
+															<div className="h-16 w-16 sm:h-20 sm:w-20 mx-auto mb-2 flex items-center justify-center overflow-hidden rounded-lg bg-gray-100 flex-shrink-0">
+																{item.image_url ? (
+																	<img
+																		src={(() => {
+																			const path = (item.image_url || '').trim();
+																			if (!path) return '';
+																			if (/^https?:\/\//i.test(path)) return path;
+																			const withSlash = path.startsWith('/') ? path : `/${path}`;
+																			return withSlash;
+																		})()}
+																		alt={item.name}
+																		className="w-full h-full object-contain p-1"
+																		onError={(e) => {
+																			e.currentTarget.style.display = 'none';
+																			e.currentTarget.nextElementSibling?.classList.remove('hidden');
+																		}}
+																	/>
+																) : (
+																	<div className="w-full h-full flex items-center justify-center">
+																		<Coffee className="h-6 w-6 sm:h-8 sm:w-8 text-[#a87437]" />
+																	</div>
+																)}
+															</div>
+															
+															{/* Content */}
+															<div className="flex-1 flex flex-col text-center">
+																<h3 className="text-xs sm:text-sm font-semibold text-[#3f3532] mb-1 line-clamp-2 leading-tight">{item.name}</h3>
+																<p className="text-xs text-gray-600 mb-2 line-clamp-2 leading-tight hidden sm:block">{item.description}</p>
+																<span className="text-sm sm:text-base font-semibold text-amber-700 mb-2">₱{Number(item.base_price).toFixed(2)}</span>
+															</div>
+
+															{/* Actions */}
+															<div className="flex flex-col gap-1">
+																{item.allow_customization && (
+																	<Button
+																	size="sm"
+																	variant="outline"
+																	onClick={() => openCustomizeModal(item)}
+																	disabled={false}
+																	className="text-xs border-[#a87437] text-[#6B5B5B] hover:bg-[#a87437]/10 h-7"
+																	title="Customize Item"
+																>
+																	<Settings className="w-3 h-3 mr-1" />
+																	<span className="hidden sm:inline">Customize</span>
+																</Button>
+																)}
+																<Button
+																	size="sm"
+																	variant="default"
+																	onClick={() => addToCart(item, 1)}
+																	disabled={false}
+																	className="text-xs bg-[#a87437] hover:bg-[#a87437]/90 text-white h-7"
+																>
+																	Add to Cart
+																</Button>
+															</div>
+														</CardContent>
+													</Card>
+												))}
+											</div>
+										</div>
+									));
+								})()}
 							</div>
 						)}
 
 						{viewMode === "list" && (
-							<div className="space-y-4">
-								{filteredItems.map((item) => (
-								<Card
-									key={item.id}
-									className="hover:shadow-xl transition-all duration-300 border shadow-lg bg-white hover:border-[#a87437]"
-								>
-									<CardContent className="p-4">
-										<div className="flex gap-4">
-											{/* Image */}
-											<div className="h-20 w-20 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-lg bg-gray-100">
-												{item.image_url ? (
-													<img
-														src={`${API_URL}${item.image_url}`}
-														alt={item.name}
-														className="w-full h-full object-contain p-1"
-														onError={(e) => {
-															e.currentTarget.style.display = 'none';
-															e.currentTarget.nextElementSibling?.classList.remove('hidden');
-														}}
-													/>
-												) : null}
-												<div className={`w-full h-full bg-gray-100 flex items-center justify-center ${item.image_url ? 'hidden' : ''}`}>
-													<Coffee className="h-6 w-6 text-[#a87437]" />
-												</div>
+							<div className="space-y-6">
+								{(() => {
+									// Group items by category
+									const groupedItems = filteredItems.reduce((groups, item) => {
+										const category = item.category;
+										if (!groups[category]) {
+											groups[category] = [];
+										}
+										groups[category].push(item);
+										return groups;
+									}, {} as Record<string, typeof filteredItems>);
+
+									// Sort categories alphabetically
+									const sortedCategories = Object.keys(groupedItems).sort();
+
+									return sortedCategories.map((category) => (
+										<div key={category} className="space-y-3">
+											{/* Category Header */}
+											<div className="space-y-2">
+												<h3 className="text-lg font-bold text-[#a87437]">{category}</h3>
+												<div className="h-px bg-[#a87437]/30"></div>
 											</div>
 											
-											{/* Content */}
-											<div className="flex-1 min-w-0 mt-2">
-												<h3 className="text-lg sm:text-xl font-semibold text-[#3f3532] mb-1 line-clamp-2">{item.name}</h3>
-												<p className="text-gray-600 text-sm mb-2 line-clamp-2">{item.description}</p>
-												<div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-3">
-													<Badge variant="outline" className="text-sm">
-														{item.category}
-													</Badge>
-													<span className="text-base sm:text-lg font-semibold text-amber-700">
-														₱{Number(item.base_price).toFixed(2)}
-													</span>
-												</div>
-											</div>
-											
-											{/* Actions */}
-											<div className="ml-4 flex items-end justify-end gap-2">
-												<Button size="sm" variant="outline" onClick={() => openCustomizeModal(item)} disabled={!item.is_available} className="text-xs border-[#a87437] text-[#6B5B5B] hover:bg-[#a87437]/10" title="Customize Item">
-													<Settings className="w-3 h-3 mr-1" />
-													Customize
-												</Button>
-												<Button size="sm" variant="default" onClick={() => addToCart(item, 1)} disabled={!item.is_available} className="text-xs bg-[#a87437] hover:bg-[#a87437]/90 text-white">
-													Add to Cart
-												</Button>
+											{/* Items List */}
+											<div className="space-y-2">
+												{groupedItems[category].map((item) => (
+													<Card
+														key={item.id}
+														className="hover:shadow-lg transition-all duration-300 border shadow-md bg-white hover:border-[#a87437]"
+													>
+														<CardContent className="p-3">
+															<div className="flex gap-3">
+																{/* Image */}
+																<div className="h-16 w-16 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-lg bg-gray-100">
+																	{item.image_url ? (
+																		<img
+																			src={(() => {
+																				const path = (item.image_url || '').trim();
+																				if (!path) return '';
+																				if (/^https?:\/\//i.test(path)) return path;
+																				const withSlash = path.startsWith('/') ? path : `/${path}`;
+																				return withSlash;
+																			})()}
+																			alt={item.name}
+																			className="w-full h-full object-contain p-1"
+																			onError={(e) => {
+																				e.currentTarget.style.display = 'none';
+																				e.currentTarget.nextElementSibling?.classList.remove('hidden');
+																			}}
+																		/>
+																	) : null}
+																	<div className={`w-full h-full bg-gray-100 flex items-center justify-center ${item.image_url ? 'hidden' : ''}`}>
+																		<Coffee className="h-6 w-6 text-[#a87437]" />
+																	</div>
+																</div>
+																
+																{/* Content */}
+																<div className="flex-1 min-w-0">
+																	<div className="flex items-start justify-between">
+																		<div className="flex-1 min-w-0">
+																			<h3 className="text-sm sm:text-base font-semibold text-[#3f3532] mb-1 line-clamp-1">{item.name}</h3>
+																			<p className="text-gray-600 text-xs sm:text-sm mb-2 line-clamp-2">{item.description}</p>
+																			<div className="flex items-center gap-2">
+																				<span className="text-sm sm:text-base font-semibold text-amber-700">
+																					₱{Number(item.base_price).toFixed(2)}
+																				</span>
+																			</div>
+																		</div>
+																		
+																		{/* Actions */}
+																		<div className="ml-3 flex items-center gap-2">
+																			{item.allow_customization && (
+																				<Button size="sm" variant="outline" onClick={() => openCustomizeModal(item)} disabled={!item.is_available} className="text-xs border-[#a87437] text-[#6B5B5B] hover:bg-[#a87437]/10 h-8" title="Customize Item">
+																					<Settings className="w-3 h-3 mr-1" />
+																					<span className="hidden sm:inline">Customize</span>
+																				</Button>
+																			)}
+																			<Button size="sm" variant="default" onClick={() => addToCart(item, 1)} disabled={!item.is_available} className="text-xs bg-[#a87437] hover:bg-[#a87437]/90 text-white h-8">
+																				Add to Cart
+																			</Button>
+																		</div>
+																	</div>
+																</div>
+															</div>
+														</CardContent>
+													</Card>
+												))}
 											</div>
 										</div>
-									</CardContent>
-								</Card>
-								))}
+									));
+								})()}
 							</div>
 						)}
 
@@ -718,86 +803,90 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
 				</div>
 			</div>
 
-            {/* Right Side - Cart (hidden when hideSidebar) */}
-            {!hideSidebar && (
-                <div className="w-[24rem] xl:w-[26rem] 2xl:w-[28rem] min-w-[24rem] max-w-[28rem] p-4 sm:p-6 flex flex-col flex-shrink-0">
+				{/* Right Side - Cart & Payment (hidden when hideSidebar) */}
+				{!hideSidebar && (
+					<div className="w-full lg:w-[30rem] xl:w-[32rem] 2xl:w-[36rem] min-w-0 p-2 sm:p-3 lg:p-4 flex-shrink-0 lg:sticky lg:top-0 lg:overflow-hidden">
 				{/* Customer Information */}
-				<Card className="mb-4 bg-white border shadow-lg">
-					<CardHeader>
-						<CardTitle className="text-base text-[#3f3532]">Customer Information</CardTitle>
+				<Card className="mb-2 bg-white border shadow-lg">
+					<CardHeader className="pt-0 pb-0 px-3 -mt-3">
+						<CardTitle className="text-sm text-[#3f3532] -mb-4">Customer Information</CardTitle>
 					</CardHeader>
-					<CardContent>
-						<div className="space-y-3">
-							<div>
-								<label className="text-sm font-medium text-[#6B5B5B] mb-1 block">Customer Name *</label>
-								<Input
-									placeholder="Enter customer name"
-									value={customerInfo.name}
-									onChange={(e) => setCustomerInfo(prev => ({ ...prev, name: e.target.value }))}
-									className="h-9 bg-white border focus:border-[#a87437]"
-								/>
-            </div>
-							<div>
-								<label className="text-sm font-medium text-gray-700 mb-2 block">Order Type *</label>
-								<div className="flex space-x-4">
-									<label className="flex items-center space-x-2">
+					<CardContent className="px-3 pb-0 pt-0 -mb-2">
+						<div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+							{/* Left: Name + Order Type */}
+							<div className="space-y-0">
+								<div>
+									<label className="text-xs font-medium text-[#6B5B5B] mb-0 block">Customer Name *</label>
+									<Input
+										placeholder="Enter customer name"
+										value={customerInfo.name}
+										onChange={(e) => setCustomerInfo(prev => ({ ...prev, name: e.target.value }))}
+										className="h-6 text-xs bg-white border focus:border-[#a87437]"
+									/>
+								</div>
+								<div className="mt-2">
+									<label className="text-xs font-medium text-gray-700 mb-0 block">Order Type *</label>
+									<div className="flex gap-3 ml-0">
+									<label className="flex items-center space-x-1">
 										<input
 											type="radio"
 											value="dine_in"
 											checked={customerInfo.orderType === 'dine_in'}
 											onChange={(e) => setCustomerInfo(prev => ({ ...prev, orderType: e.target.value as 'dine_in' | 'takeout' }))}
-											className="w-4 h-4 text-amber-600"
+											className="w-3 h-3 text-amber-600"
 										/>
-										<span className="text-sm text-gray-700">Dine In</span>
+										<span className="text-xs text-gray-700">Dine In</span>
 									</label>
-									<label className="flex items-center space-x-2">
+									<label className="flex items-center space-x-1">
 										<input
 											type="radio"
 											value="takeout"
 											checked={customerInfo.orderType === 'takeout'}
 											onChange={(e) => setCustomerInfo(prev => ({ ...prev, orderType: e.target.value as 'dine_in' | 'takeout' }))}
-											className="w-4 h-4 text-amber-600"
+											className="w-3 h-3 text-amber-600"
 										/>
-										<span className="text-sm text-gray-700">Take Out</span>
+										<span className="text-xs text-gray-700">Take Out</span>
 									</label>
 								</div>
 							</div>
-							{customerInfo.orderType === 'dine_in' && (
-								<div>
-									<label className="text-sm font-medium text-gray-700 mb-1 block">Table Number *</label>
-									<Input
-										placeholder="Enter table number (1-6)"
-										type="number"
-										min="1"
-										max="6"
-										value={customerInfo.tableNumber || ''}
-										onChange={(e) => {
-											const value = e.target.value;
-											const num = parseInt(value);
-											if (value === '' || (num >= 1 && num <= 6)) {
-												setCustomerInfo(prev => ({ ...prev, tableNumber: value ? Number(value) : undefined }));
-											}
-										}}
-										className="h-9"
-									/>
-									{customerInfo.tableNumber && (customerInfo.tableNumber < 1 || customerInfo.tableNumber > 6) && (
-										<p className="text-sm text-red-500 mt-1">Table number must be between 1 and 6</p>
-									)}
-								</div>
-							)}
+						</div>
+						{/* Right: Table Number */}
+							<div className="space-y-0">
+								{customerInfo.orderType === 'dine_in' && (
+									<div>
+										<label className="text-xs font-medium text-gray-700 mb-0 block">Table Number *</label>
+										<div className="grid grid-cols-3 gap-2">
+											{[1,2,3,4,5,6].map((num) => (
+												<Button
+													key={num}
+													variant={customerInfo.tableNumber === num ? 'default' : 'outline'}
+													onClick={() => setCustomerInfo(prev => ({ ...prev, tableNumber: num }))}
+													className="h-7 text-sm px-2"
+													type="button"
+												>
+													{num}
+												</Button>
+											))}
+										</div>
+									</div>
+								)}
+							</div>
 						</div>
 					</CardContent>
 				</Card>
 
-				<Card className="flex-1 flex flex-col bg-white border shadow-lg">
-					<CardHeader className="flex-shrink-0">
-						<CardTitle className="flex items-center gap-2 text-[#3f3532]">
-							<ShoppingCart className="w-5 h-5 text-[#a87437]" />
+				<Card className="flex-1 flex flex-col bg-white border shadow-lg min-h-0">
+					<CardHeader className="flex-shrink-0 !py-0 px-2">
+            <CardTitle className="flex items-center gap-1 text-[#3f3532] text-xs !m-0">
+              <img src="/images/shopping-cart.png" alt="Cart" className="w-3 h-3 object-contain invert" />
 							Cart ({cart.length})
 						</CardTitle>
 					</CardHeader>
-					<CardContent className="flex-1 flex flex-col min-h-0" style={{ minHeight: '500px' }}>
-						<div className="flex-1 overflow-y-auto mb-4">
+				<CardContent className="flex-1 min-h-0 overflow-hidden" style={{ height: '250px' }}>
+					<div className="grid grid-cols-1 lg:grid-cols-2 gap-2 h-full">
+						{/* Left: Cart Items */}
+						<div className="flex flex-col min-h-0 pt-0">
+							<div className="flex-1 overflow-y-auto mb-1 max-h-[200px]">
 							{cart.length === 0 ? (
 								<div className="text-center text-[#6B5B5B] py-12">
 									<Coffee className="w-12 h-12 mx-auto mb-3 text-[#a87437]/30" />
@@ -855,14 +944,6 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
 													>
 														<Plus className="w-3 h-3" />
 													</Button>
-													<Button
-														size="sm"
-														variant="outline"
-														onClick={() => removeFromCart(item.cartItemId)}
-														className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
-													>
-														<X className="w-3 h-3" />
-													</Button>
 												</div>
 											</div>
 											{item.notes && (
@@ -875,124 +956,111 @@ export default function SimplePOS({ hideSidebar = false, sidebarOnly = false, ch
 								</div>
 							)}
 						</div>
+						</div>
 
-						{/* Cart Summary - Fixed at bottom */}
-						<div className="flex-shrink-0 border-t pt-4 space-y-4">
-							{/* Payment Method Selection */}
-							<div>
-								<label className="text-sm font-medium text-gray-700 mb-2 block">Payment Method</label>
-								<div className="grid grid-cols-3 gap-2">
-									<button
-										type="button"
-										onClick={() => setCustomerInfo(prev => ({ ...prev, paymentMethod: 'cash' }))}
-										className={`p-2 rounded-lg border-2 transition-all ${
-											customerInfo.paymentMethod === 'cash'
-												? 'border-blue-500 bg-blue-50 text-blue-700'
-												: 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-										}`}
-									>
-										<div className="text-center">
-											<div className="text-base mb-1">💵</div>
-											<div className="text-xs font-medium">Cash</div>
-										</div>
-									</button>
-									<button
-										type="button"
-										onClick={() => setCustomerInfo(prev => ({ ...prev, paymentMethod: 'gcash' }))}
-										className={`p-2 rounded-lg border-2 transition-all ${
-											customerInfo.paymentMethod === 'gcash'
-												? 'border-green-500 bg-green-50 text-green-700'
-												: 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-										}`}
-									>
-										<div className="text-center">
-											<div className="text-base mb-1">📱</div>
-											<div className="text-xs font-medium">GCash</div>
-										</div>
-									</button>
-									<button
-										type="button"
-										onClick={() => setCustomerInfo(prev => ({ ...prev, paymentMethod: 'paymaya' }))}
-										className={`p-2 rounded-lg border-2 transition-all ${
-											customerInfo.paymentMethod === 'paymaya'
-												? 'border-purple-500 bg-purple-50 text-purple-700'
-												: 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-										}`}
-									>
-										<div className="text-center">
-											<div className="text-base mb-1">💳</div>
-											<div className="text-xs font-medium">PayMaya</div>
-										</div>
-									</button>
+						{/* Right: Payment and Summary */}
+					<div className="flex flex-col justify-between lg:pl-4 lg:border-l lg:border-gray-200 min-w-0 pt-0">
+						<div className="space-y-0.5">
+                            {/* Payment Method Selection */}
+								<div>
+                                <label className="text-sm font-medium text-gray-700 mb-1 block">Payment Method</label>
+                            <div className="grid grid-cols-3 gap-1 sm:gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setCustomerInfo(prev => ({ ...prev, paymentMethod: 'cash' }))}
+                                        className={`p-1 rounded-md border transition-all ${
+                                            customerInfo.paymentMethod === 'cash'
+                                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                                        }`}
+                                    >
+                                        <div className="text-center leading-tight">
+                                            <div className="text-sm mb-1">💵</div>
+                                            <div className="text-xs font-medium">Cash</div>
+                                        </div>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCustomerInfo(prev => ({ ...prev, paymentMethod: 'gcash' }))}
+                                        className={`p-1 rounded-md border transition-all ${
+                                            customerInfo.paymentMethod === 'gcash'
+                                                ? 'border-green-500 bg-green-50 text-green-700'
+                                                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                                        }`}
+                                    >
+                                        <div className="text-center leading-tight">
+                                            <div className="text-sm mb-1">📱</div>
+                                            <div className="text-xs font-medium">GCash</div>
+                                        </div>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCustomerInfo(prev => ({ ...prev, paymentMethod: 'paymaya' }))}
+                                        className={`p-1 rounded-md border transition-all ${
+                                            customerInfo.paymentMethod === 'paymaya'
+                                                ? 'border-purple-500 bg-purple-50 text-purple-700'
+                                                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                                        }`}
+                                    >
+                                        <div className="text-center leading-tight">
+                                            <div className="text-sm mb-1">💳</div>
+                                            <div className="text-xs font-medium">PayMaya</div>
+                                        </div>
+                                    </button>
 								</div>
 							</div>
 
 							{/* Total Amount Display */}
-							<div className="bg-blue-50 p-3 rounded-lg">
-								<div className="flex justify-between text-lg font-semibold text-blue-900">
-									<span>Total Amount:</span>
-									<span>₱{getTotalPrice().toFixed(2)}</span>
-								</div>
-								<p className="text-xs text-blue-600 mt-1">
-									{cart.length} item{cart.length !== 1 ? 's' : ''} in cart
-								</p>
-								<div className="mt-2 pt-2 border-t border-blue-200">
-									<p className="text-xs text-blue-700">
-										Payment: <span className="font-medium capitalize">{customerInfo.paymentMethod}</span>
-									</p>
-								</div>
-							</div>
+							<div className="bg-blue-50 p-2 rounded-lg">
+                                <div className="mt-1 pt-1 border-b border-blue-200">
+                                    <p className="text-sm text-blue-700">
+                                        Payment: <span className="font-medium capitalize">{customerInfo.paymentMethod}</span>
+                                    </p>
+                                </div>
+                                <p className="text-sm text-blue-600 mt-1">
+                                    {cart.length} item{cart.length !== 1 ? 's' : ''} in cart
+                                </p>
+                                <div className="flex justify-between text-base font-semibold text-blue-900">
+                                    <span>Total Amount:</span>
+                                    <span>₱{getTotalPrice().toFixed(2)}</span>
+                                </div>
+                            </div>
 
-							{/* Action Buttons - Always Visible */}
-							<div className="flex gap-2">
-								<Button
-									onClick={clearCart}
-									variant="outline"
-									className="flex-1 h-10 border-[#a87437] text-[#6B5B5B] hover:bg-[#a87437]/10"
-									disabled={cart.length === 0}
-								>
-									<Trash2 className="w-4 h-4 mr-2" />
-									Clear Cart
-								</Button>
-								<Button
-									onClick={processOrder}
-									disabled={cart.length === 0 || !customerInfo.name.trim() || (customerInfo.orderType === 'dine_in' && (!customerInfo.tableNumber || customerInfo.tableNumber < 1 || customerInfo.tableNumber > 6))}
-									className="flex-1 h-10 bg-[#a87437] hover:bg-[#a87437]/90 text-white"
-								>
-									Process Order
-								</Button>
-							</div>
-							
-							{/* Debug Info */}
-							<div className="text-xs text-gray-500 mt-2">
-								Debug: Cart length: {cart.length}, Customer name: "{customerInfo.name}", Table: {customerInfo.tableNumber}
+						{/* Action Buttons - Always Visible */}
+						<div className="flex gap-2 mt-1 w-full">
+							<Button onClick={clearCart} variant="outline" className="h-8 flex-1 min-w-0 border-[#a87437] text-[#6B5B5B] hover:bg-[#a87437]/10 inline-flex items-center justify-center whitespace-nowrap text-xs font-medium px-2" disabled={cart.length === 0}>
+								<Trash2 className="w-3 h-3 mr-1" />
+								Clear Cart
+                                </Button>
+							<Button onClick={processOrder} disabled={cart.length === 0 || !customerInfo.name.trim() || (customerInfo.orderType === 'dine_in' && (!customerInfo.tableNumber || customerInfo.tableNumber < 1 || customerInfo.tableNumber > 6))} className="h-8 flex-1 min-w-0 bg-[#a87437] hover:bg-[#a87437]/90 text-white inline-flex items-center justify-center whitespace-nowrap text-xs font-medium px-2">
+								Process Order
+                                </Button>
+                            </div>
 							</div>
 						</div>
-					</CardContent>
-				</Card>
+
+						{/* Debug Info removed */}
+                        </div>
+                  </CardContent>
+                </Card>
 
 				{/* Payment Processor - rendered under cart */}
 				{children && (
-					<div className="mt-4">
+					<div className="mt-4 flex-1 min-h-0 overflow-y-auto">
 						{children}
 					</div>
 				)}
 			</div>
 			)}
-            {/* Customization Modal */}
-            {customizeModalOpen && selectedItemForCustomization && (
-                <UnifiedCustomizeModal
-                    item={{
-                        ...selectedItemForCustomization,
-                        price: selectedItemForCustomization.base_price
-                    }}
-                    onClose={() => {
-                        setCustomizeModalOpen(false);
-                        setSelectedItemForCustomization(null);
-                    }}
-                    onAdd={handleCustomizationComplete}
-                />
-            )}
+
+			{/* Customization Modal */}
+			{customizeModalOpen && selectedItemForCustomization && (
+				<UnifiedCustomizeModal
+					item={selectedItemForCustomization}
+					onClose={closeCustomizeModal}
+					onAdd={handleCustomizedItem}
+				/>
+			)}
 		</div>
 	);
 } 

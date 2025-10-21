@@ -18,11 +18,17 @@ export function SignupForm({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [age, setAge] = useState("");
+  const [gender, setGender] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Preserve table param if customer came from a QR link
+  const urlParams = new URLSearchParams(window.location.search);
+  const tableFromUrl = urlParams.get('table');
 
   // Password strength validation function
   function isStrongPassword(password: string) {
@@ -64,7 +70,7 @@ export function SignupForm({
       const res = await fetch("/api/customer/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, fullName, email, password }),
+        body: JSON.stringify({ username, fullName, email, password, age, gender }),
         credentials: "include",
       });
       const data = await res.json();
@@ -73,7 +79,7 @@ export function SignupForm({
       } else {
         setSuccess("Account created successfully! Redirecting to login...");
         setTimeout(() => {
-          window.location.href = "/customer-login";
+          window.location.href = `/customer-login${tableFromUrl ? `?table=${encodeURIComponent(tableFromUrl)}` : ''}`;
         }, 2000);
       }
     } catch (err) {
@@ -100,7 +106,7 @@ export function SignupForm({
                 <Input
                   id="username"
                   type="text"
-                  placeholder="yourusername"
+                  placeholder="Enter your username"
                   required
                   value={username}
                   onChange={e => setUsername(e.target.value)}
@@ -113,7 +119,7 @@ export function SignupForm({
                 <Input
                   id="fullName"
                   type="text"
-                  placeholder="Your full name"
+                  placeholder="Enter your full name"
                   required
                   value={fullName}
                   onChange={e => setFullName(e.target.value)}
@@ -121,12 +127,13 @@ export function SignupForm({
                   className="h-10 sm:h-10 text-sm sm:text-base"
                 />
               </div>
+              {/* Email - full width */}
               <div className="grid gap-2 sm:gap-3">
                 <Label htmlFor="email" className="text-sm font-medium">Email</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="m@example.com"
+                  placeholder="Enter your email"
                   required
                   value={email}
                   onChange={e => setEmail(e.target.value)}
@@ -134,12 +141,48 @@ export function SignupForm({
                   className="h-10 sm:h-10 text-sm sm:text-base"
                 />
               </div>
+              {/* Age and Gender - same row on sm+ */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+                <div className="grid gap-2 sm:gap-3">
+                  <Label htmlFor="age" className="text-sm font-medium">Age</Label>
+                  <Input
+                    id="age"
+                    type="number"
+                    placeholder="Enter your age"
+                    required
+                    value={age}
+                    onChange={e => setAge(e.target.value)}
+                    disabled={loading}
+                    min="13"
+                    max="120"
+                    className="h-10 sm:h-10 text-sm sm:text-base"
+                  />
+                </div>
+                <div className="grid gap-2 sm:gap-3">
+                  <Label htmlFor="gender" className="text-sm font-medium">Gender</Label>
+                  <select
+                    id="gender"
+                    required
+                    value={gender}
+                    onChange={e => setGender(e.target.value)}
+                    disabled={loading}
+                    title="Select your gender"
+                    className={`h-10 sm:h-10 text-sm sm:text-base px-3 py-1 border border-gray-300 rounded-md focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] bg-transparent ${!gender ? 'text-gray-500' : 'text-black'}`}
+                  >
+                    <option value="" disabled className="text-gray-500">Select your gender</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="prefer-not-to-say">Prefer not to say</option>
+                  </select>
+                </div>
+              </div>
               <div className="grid gap-2 sm:gap-3">
                 <Label htmlFor="password" className="text-sm font-medium">Password</Label>
                 <div className="relative">
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
+                    placeholder="Enter your password"
                     required
                     value={password}
                     onChange={e => setPassword(e.target.value)}
@@ -172,6 +215,7 @@ export function SignupForm({
                   <Input
                     id="confirmPassword"
                     type={showConfirmPassword ? "text" : "password"}
+                    placeholder="Confirm your password"
                     required
                     value={confirmPassword}
                     onChange={e => setConfirmPassword(e.target.value)}
@@ -204,7 +248,7 @@ export function SignupForm({
             </div>
             <div className="mt-4 text-center text-xs sm:text-sm">
               Already have an account?{" "}
-              <a href="/customer-login" className="underline underline-offset-4 text-[#a87437] hover:text-[#8f652f]">
+              <a href={`/customer-login${tableFromUrl ? `?table=${encodeURIComponent(tableFromUrl)}` : ''}`} className="underline underline-offset-4 text-[#a87437] hover:text-[#8f652f]">
                 Log in
               </a>
             </div>

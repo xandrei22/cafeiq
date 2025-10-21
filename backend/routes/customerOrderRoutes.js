@@ -24,6 +24,234 @@ router.get('/menu', async(req, res) => {
     }
 });
 
+// Test endpoint to check orders for a specific customer (NO AUTH REQUIRED)
+router.get('/test-orders/:customerEmail', async(req, res) => {
+    try {
+        const { customerEmail } = req.params;
+
+        // Direct query to find orders
+        const [orders] = await db.query(`
+            SELECT 
+                o.order_id,
+                o.customer_name,
+                o.customer_id,
+                o.status,
+                o.payment_status,
+                o.payment_method,
+                o.order_time,
+                c.email as customer_email
+            FROM orders o
+            LEFT JOIN customers c ON o.customer_id = c.id
+            WHERE c.email = ? OR o.customer_name = ? OR o.customer_name LIKE ?
+            ORDER BY o.order_time DESC
+        `, [customerEmail, customerEmail, `%${customerEmail}%`]);
+
+        res.json({
+            success: true,
+            customerEmail: customerEmail,
+            orders: orders,
+            count: orders.length
+        });
+    } catch (error) {
+        console.error('Test orders error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to get test orders'
+        });
+    }
+});
+
+// Get customer orders (TEMPORARILY NO AUTH REQUIRED FOR TESTING)
+router.get('/orders/:customerEmail', async(req, res) => {
+    try {
+        const { customerEmail } = req.params;
+
+        if (!customerEmail) {
+            return res.status(400).json({
+                success: false,
+                message: 'Customer email is required'
+            });
+        }
+
+        console.log('🔍 Customer orders API called with email:', customerEmail);
+
+        const result = await orderProcessingService.getCustomerOrders(customerEmail);
+        console.log('🔍 Customer orders API result:', result);
+        res.json(result);
+
+    } catch (error) {
+        console.error('Get customer orders error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to get customer orders'
+        });
+    }
+});
+
+// Customer dashboard data endpoint (TEMPORARILY NO AUTH REQUIRED FOR TESTING)
+router.get('/dashboard', async(req, res) => {
+    try {
+        // Get customer ID from query parameter
+        const customerId = req.query.customerId;
+
+        if (!customerId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Customer ID is required'
+            });
+        }
+
+        // Get loyalty data
+        const [loyaltyResult] = await db.query(`
+            SELECT 
+                COALESCE(loyalty_points, 0) as points,
+                created_at
+            FROM customers 
+            WHERE id = ?
+        `, [customerId]);
+
+        // Compute fallback points from transactions if needed
+        let points = (loyaltyResult[0] && loyaltyResult[0].points) || 0;
+        if (!points) {
+            const [txnAgg] = await db.query(`
+                SELECT 
+                    COALESCE(SUM(points_earned), 0) AS earned,
+                    COALESCE(SUM(points_redeemed), 0) AS redeemed
+                FROM loyalty_transactions 
+                WHERE customer_id = ?
+            `, [customerId]);
+            points = Math.max(
+                0,
+                ((txnAgg[0] && txnAgg[0].earned) || 0) - ((txnAgg[0] && txnAgg[0].redeemed) || 0)
+            );
+
+            // Secondary fallback: derive from orders if no transactions
+            if (!points) {
+                const [orderAgg] = await db.query(`
+                    SELECT 
+                        COALESCE(SUM(total_price), 0) AS total_paid
+                    FROM orders
+                    WHERE customer_id = ? AND payment_status = 'paid'
+                `, [customerId]);
+                const derivedEarned = Math.floor((orderAgg[0] && orderAgg[0].total_paid) || 0);
+                // Subtract redeemed from transactions if any
+                const redeemed = (txnAgg[0] && txnAgg[0].redeemed) || 0;
+                points = Math.max(0, derivedEarned - redeemed);
+            }
+        }
+
+        // Get current orders
+        const [currentOrdersResult] = await db.query(`
+            SELECT 
+                order_id as id,
+                items,
+                total_price as total,
+                status,
+                estimated_ready_time as estimatedTime,
+                order_time as orderTime
+            FROM orders 
+            WHERE customer_id = ? AND status IN ('pending', 'preparing', 'ready')
+            ORDER BY order_time DESC
+        `, [customerId]);
+
+        // Get recent orders
+        const [recentOrdersResult] = await db.query(`
+            SELECT 
+                order_id as id,
+                items,
+                total_price as total,
+                status,
+                order_time as orderTime,
+                completed_time as completedTime
+            FROM orders 
+            WHERE customer_id = ? AND status = 'completed'
+            ORDER BY order_time DESC
+            LIMIT 10
+        `, [customerId]);
+
+        // Get total orders count
+        const [totalOrdersResult] = await db.query(`
+            SELECT COUNT(*) as total
+            FROM orders 
+            WHERE customer_id = ?
+        `, [customerId]);
+
+        // Get favorites (most ordered items)
+        const [favoritesResult] = await db.query(`
+            SELECT 
+                JSON_EXTRACT(items, '$[*].name') as names,
+                COUNT(*) as orderCount
+            FROM orders 
+            WHERE customer_id = ? AND status = 'completed'
+            GROUP BY items
+            ORDER BY orderCount DESC
+            LIMIT 5
+        `, [customerId]);
+
+        // Process loyalty data
+        const loyalty = loyaltyResult[0] || {};
+        let tier = 'Bronze'; // Placeholder, actual tier calculation needs points
+        let nextTier = 'Silver'; // Placeholder, actual tier calculation needs points
+        let pointsToNextTier = 100 - points;
+
+        if (points >= 500) {
+            tier = 'Gold';
+            nextTier = 'Platinum';
+            pointsToNextTier = 1000 - points;
+        } else if (points >= 200) {
+            tier = 'Silver';
+            nextTier = 'Gold';
+            pointsToNextTier = 500 - points;
+        }
+
+        const dashboardData = {
+            loyalty: {
+                points,
+                tier,
+                nextTier,
+                pointsToNextTier: Math.max(0, pointsToNextTier)
+            },
+            orders: {
+                current: currentOrdersResult.map(order => ({
+                    id: order.id,
+                    items: JSON.parse(order.items || '[]').map(item => item.name),
+                    total: parseFloat(order.total),
+                    status: order.status,
+                    estimatedTime: order.estimatedTime,
+                    orderTime: order.orderTime
+                })),
+                recent: recentOrdersResult.map(order => ({
+                    id: order.id,
+                    items: JSON.parse(order.items || '[]').map(item => item.name),
+                    total: parseFloat(order.total),
+                    status: order.status,
+                    orderTime: order.orderTime,
+                    completedTime: order.completedTime
+                })),
+                total: (totalOrdersResult[0] && totalOrdersResult[0].total) || 0
+            },
+            favorites: favoritesResult.map(item => ({
+                id: Math.random(),
+                name: JSON.parse(item.names || '[]')[0] || 'Unknown Item',
+                category: 'Popular',
+                imageUrl: null
+            }))
+        };
+
+        res.json({
+            success: true,
+            ...dashboardData
+        });
+
+    } catch (error) {
+        console.error('Error fetching customer dashboard data:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch dashboard data'
+        });
+    }
+});
+
 // Apply authentication to order-related routes (require login for orders)
 router.use(ensureAuthenticated);
 
@@ -217,8 +445,9 @@ router.post('/checkout', async(req, res) => {
         // Update order status based on payment method
         // For digital payments, set to pending_verification until receipt is uploaded
         const orderStatus = paymentMethod === 'cash' ? 'pending_verification' : 'pending_verification';
-        console.log('🔍 Customer order status update:', { orderId, paymentMethod, orderStatus });
-        await db.query('UPDATE orders SET status = ? WHERE order_id = ?', [orderStatus, orderId]);
+        const paymentStatus = paymentMethod === 'cash' ? 'pending' : 'pending';
+        console.log('🔍 Customer order status update:', { orderId, paymentMethod, orderStatus, paymentStatus });
+        await db.query('UPDATE orders SET status = ?, payment_status = ? WHERE order_id = ?', [orderStatus, paymentStatus, orderId]);
 
         // Verify the status was actually updated
         const [verifyResult] = await db.query('SELECT status FROM orders WHERE order_id = ?', [orderId]);
@@ -287,89 +516,7 @@ router.post('/checkout', async(req, res) => {
     }
 });
 
-// Get customer orders
-router.get('/orders/:customerEmail', async(req, res) => {
-    try {
-        const { customerEmail } = req.params;
 
-        if (!customerEmail) {
-            return res.status(400).json({
-                success: false,
-                message: 'Customer email is required'
-            });
-        }
-
-        console.log('🔍 Customer orders API called with email:', customerEmail);
-
-        // First, let's check what orders exist in the database
-        const [allOrders] = await db.query(`
-            SELECT 
-                o.order_id,
-                o.customer_name,
-                o.customer_id,
-                o.status,
-                o.payment_status,
-                o.payment_method,
-                o.order_time,
-                c.email as customer_email
-            FROM orders o
-            LEFT JOIN customers c ON o.customer_id = c.id
-            ORDER BY o.order_time DESC
-            LIMIT 10
-        `);
-
-        console.log('🔍 All recent orders in database:', allOrders);
-        console.log('🔍 Looking for customer email:', customerEmail);
-
-        const result = await orderProcessingService.getCustomerOrders(customerEmail);
-        console.log('🔍 Customer orders API result:', result);
-        res.json(result);
-
-    } catch (error) {
-        console.error('Get customer orders error:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to get customer orders'
-        });
-    }
-});
-
-// Test endpoint to check orders for a specific customer
-router.get('/test-orders/:customerEmail', async(req, res) => {
-    try {
-        const { customerEmail } = req.params;
-
-        // Direct query to find orders
-        const [orders] = await db.query(`
-            SELECT 
-                o.order_id,
-                o.customer_name,
-                o.customer_id,
-                o.status,
-                o.payment_status,
-                o.payment_method,
-                o.order_time,
-                c.email as customer_email
-            FROM orders o
-            LEFT JOIN customers c ON o.customer_id = c.id
-            WHERE c.email = ? OR o.customer_name = ? OR o.customer_name LIKE ?
-            ORDER BY o.order_time DESC
-        `, [customerEmail, customerEmail, `%${customerEmail}%`]);
-
-        res.json({
-            success: true,
-            customerEmail: customerEmail,
-            orders: orders,
-            count: orders.length
-        });
-    } catch (error) {
-        console.error('Test orders error:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to get test orders'
-        });
-    }
-});
 
 // Get all customer orders (for admin)
 router.get('/orders', async(req, res) => {
@@ -506,6 +653,36 @@ router.get('/dashboard', async(req, res) => {
             WHERE id = ?
         `, [customerId]);
 
+        // Compute fallback points from transactions if needed
+        let points = (loyaltyResult[0] && loyaltyResult[0].points) || 0;
+        if (!points) {
+            const [txnAgg] = await db.query(`
+                SELECT 
+                    COALESCE(SUM(points_earned), 0) AS earned,
+                    COALESCE(SUM(points_redeemed), 0) AS redeemed
+                FROM loyalty_transactions 
+                WHERE customer_id = ?
+            `, [customerId]);
+            points = Math.max(
+                0,
+                ((txnAgg[0] && txnAgg[0].earned) || 0) - ((txnAgg[0] && txnAgg[0].redeemed) || 0)
+            );
+
+            // Secondary fallback: derive from orders if no transactions
+            if (!points) {
+                const [orderAgg] = await db.query(`
+                    SELECT 
+                        COALESCE(SUM(total_price), 0) AS total_paid
+                    FROM orders
+                    WHERE customer_id = ? AND payment_status = 'paid'
+                `, [customerId]);
+                const derivedEarned = Math.floor((orderAgg[0] && orderAgg[0].total_paid) || 0);
+                // Subtract redeemed from transactions if any
+                const redeemed = (txnAgg[0] && txnAgg[0].redeemed) || 0;
+                points = Math.max(0, derivedEarned - redeemed);
+            }
+        }
+
         // Get current orders
         const [currentOrdersResult] = await db.query(`
             SELECT 
@@ -585,9 +762,8 @@ router.get('/dashboard', async(req, res) => {
 
         // Process loyalty data
         const loyalty = loyaltyResult[0] || {};
-        const points = parseInt(loyalty.points) || 0;
-        let tier = 'Bronze';
-        let nextTier = 'Silver';
+        let tier = 'Bronze'; // Placeholder, actual tier calculation needs points
+        let nextTier = 'Silver'; // Placeholder, actual tier calculation needs points
         let pointsToNextTier = 100 - points;
 
         if (points >= 500) {

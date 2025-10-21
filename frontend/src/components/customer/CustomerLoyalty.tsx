@@ -8,12 +8,14 @@ import {
   CheckCircle,
   AlertCircle,
   TrendingUp,
-  Receipt
+  Receipt,
+  ChevronDown
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { useAuth } from './AuthContext';
 import { io, Socket } from 'socket.io-client';
 
@@ -59,23 +61,70 @@ const CustomerLoyalty: React.FC = () => {
   const [message, setMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [claimedRewards, setClaimedRewards] = useState<Array<{
-    id: number;
+    id: number; // redemptionId
+    rewardId: number; // reward.id to correctly hide from available list
     name: string;
     expiresAt: string;
     status: string;
+    claimCode?: string;
   }>>([]);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Handle custom order placed event
+  const handleOrderPlaced = (event: CustomEvent) => {
+    console.log('🛒 Order placed - refreshing loyalty data:', event.detail);
+    fetchLoyaltyData(); // Refresh loyalty data when order is placed
+  };
+
+  // Tab options for dropdown
+  const tabOptions = [
+    { value: 'overview', label: 'Available Rewards' },
+    { value: 'points-history', label: 'Points Earned History' },
+    { value: 'redemption-history', label: 'Redemption History' }
+  ];
+
+  // Screen size detection
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setIsMobile(window.innerWidth < 640); // sm breakpoint
+    };
+    
+    checkScreenSize();
+    window.addEventListener('resize', checkScreenSize);
+    
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, []);
 
   // Load claimed rewards from localStorage on component mount and setup WebSocket
   useEffect(() => {
     if (authenticated && user) {
-      // Initialize Socket.IO connection
+      // Initialize Socket.IO connection (use backend API URL and credentials)
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-      const newSocket = io(API_URL);
+      const newSocket = io(API_URL, {
+        transports: ['polling', 'websocket'],
+        path: '/socket.io',
+        withCredentials: true,
+        timeout: 30000,
+        forceNew: true,
+        autoConnect: true,
+        reconnection: true,
+        reconnectionAttempts: 3,
+        reconnectionDelay: 1500
+      });
       setSocket(newSocket);
 
       // Join customer room for real-time updates
-      newSocket.emit('join-customer-room', { customerEmail: user.email });
+      newSocket.on('connect', () => {
+        newSocket.emit('join-customer-room', { customerEmail: user.email });
+      });
+      newSocket.io.on('reconnect', () => {
+        newSocket.emit('join-customer-room', { customerEmail: user.email });
+      });
+
+      newSocket.on('connect_error', (err) => {
+        console.warn('CustomerLoyalty socket connect_error:', err?.message || err);
+      });
 
       // Listen for real-time updates
       newSocket.on('loyalty-updated', (data) => {
@@ -83,11 +132,16 @@ const CustomerLoyalty: React.FC = () => {
         fetchLoyaltyData();
       });
 
+      // Listen for custom order placed event to refresh loyalty data
+      window.addEventListener('orderPlaced', handleOrderPlaced as EventListener);
+
       loadClaimedRewardsFromStorage();
       fetchLoyaltyData();
 
       return () => {
         newSocket.close();
+        // Clean up custom event listener
+        window.removeEventListener('orderPlaced', handleOrderPlaced as EventListener);
       };
     }
   }, [authenticated, user]);
@@ -194,6 +248,37 @@ const CustomerLoyalty: React.FC = () => {
           redemption_history: historyData.redemptions || [],
           points_earned_history: pointsHistoryData.pointsHistory || []
         });
+
+        // Build pending claimed rewards from server history (keeps UI in sync across reloads)
+        try {
+          const nowMs = Date.now();
+          const pendingFromServer: Array<{ id: number; rewardId: number; name: string; expiresAt: string; status: string; claimCode?: string; }> =
+            (historyData.redemptions || [])
+              .filter((r: any) => (r.status || '').toLowerCase() === 'pending' && r.expires_at && new Date(r.expires_at).getTime() > nowMs)
+              .map((r: any) => ({
+                id: Number(r.id),
+                rewardId: Number(r.reward_id),
+                name: r.reward_name || 'Reward',
+                expiresAt: r.expires_at,
+                status: 'pending',
+                claimCode: r.claim_code
+              }));
+
+          // Merge with any locally stored claimed rewards, preferring server truth
+          const byRewardId = new Map<number, any>();
+          for (const cr of claimedRewards) {
+            if (typeof cr.rewardId === 'number') byRewardId.set(cr.rewardId, cr);
+          }
+          for (const sr of pendingFromServer) {
+            byRewardId.set(sr.rewardId, sr);
+          }
+          const merged = Array.from(byRewardId.values());
+          setClaimedRewards(merged);
+          saveClaimedRewardsToStorage(merged);
+        } catch (e) {
+          // Non-fatal; UI will still show available rewards
+          console.warn('Failed to merge pending redemptions from server:', (e as any)?.message || e);
+        }
       } else {
         setError('Failed to load loyalty data');
       }
@@ -235,14 +320,16 @@ const CustomerLoyalty: React.FC = () => {
 
       if (res.ok) {
         const data = await res.json();
-        setMessage(`Successfully claimed "${reward.name}"! Claim expires in 20 minutes.`);
+        setMessage(`Successfully claimed "${reward.name}"! Your claim code is ${data.claimCode}. Show this code to staff to redeem.`);
         
         // Add to claimed rewards with countdown
         const newClaimedRewards = [...claimedRewards, {
           id: data.redemptionId,
+          rewardId: reward.id,
           name: reward.name,
           expiresAt: data.expiresAt,
-          status: 'pending'
+          status: 'pending',
+          claimCode: data.claimCode
         }];
         setClaimedRewards(newClaimedRewards);
         
@@ -323,7 +410,7 @@ const CustomerLoyalty: React.FC = () => {
 
   // Check if a reward is already claimed
   const isRewardClaimed = (rewardId: number) => {
-    return claimedRewards.some(claimed => claimed.id === rewardId);
+    return claimedRewards.some(claimed => claimed.rewardId === rewardId);
   };
 
   const formatDate = (dateString: string) => {
@@ -356,7 +443,7 @@ const CustomerLoyalty: React.FC = () => {
           <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Authentication Required</h2>
           <p className="text-gray-600 mb-4">Please log in to view your loyalty information.</p>
-          <Button onClick={() => window.location.href = '/customer-login'}>
+          <Button onClick={() => navigate('/customer-login')}>
             Go to Login
           </Button>
         </div>
@@ -388,10 +475,10 @@ const CustomerLoyalty: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-white p-4">
+    <div className="min-h-screen bg-[#f5f5f5] py-4 px-2 sm:px-3 lg:px-4">
       <div className="max-w-full mx-auto space-y-6">
         {/* Header */}
-        <div className="space-y-4 sm:space-y-6 px-2 sm:px-4 lg:px-6">
+        <div className="space-y-4 sm:space-y-6 pl-0 sm:pl-1 lg:pl-2 pr-2 sm:pr-3 lg:pr-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
             <div className="min-w-0 flex-1">
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Loyalty Program</h1>
@@ -401,7 +488,7 @@ const CustomerLoyalty: React.FC = () => {
         </div>
 
         {/* Points Overview */}
-        <Card className="bg-white border-2 border-[#a87437] shadow-xl hover:shadow-2xl transition-shadow duration-300">
+        <Card className="bg-white border-2 border-[#a87437] shadow-xl hover:shadow-2xl transition-shadow duration-300 mx-2 sm:mx-3 lg:mx-4">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-[#6B5B5B]">
               <Coins className="h-6 w-6" />
@@ -413,6 +500,9 @@ const CustomerLoyalty: React.FC = () => {
               <div className="text-center p-4 border-2 border-[#a87437] rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-300">
                 <div className="text-3xl font-bold text-[#a87437] mb-2">{loyaltyData?.loyalty_points || 0}</div>
                 <p className="text-gray-600">Current Points</p>
+                <p className="text-xs text-green-600 mt-1">
+                  +{(loyaltyData?.points_earned_history && loyaltyData.points_earned_history.length > 0 ? (loyaltyData.points_earned_history[0].points_earned || 0) : 0)} from last order
+                </p>
               </div>
               <div className="text-center p-4 border-2 border-[#a87437] rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-300">
                 <div className="text-3xl font-bold text-green-600 mb-2">{loyaltyData?.total_earned || 0}</div>
@@ -426,22 +516,154 @@ const CustomerLoyalty: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 bg-white border-2 border-[#a87437]/60 shadow-lg">
-            <TabsTrigger value="overview" className="data-[state=active]:bg-[#a87437] data-[state=active]:text-white">
-              Available Rewards
+        {/* Responsive Navigation */}
+        <div className="space-y-6">
+          {isMobile ? (
+            /* Mobile Dropdown */
+            <div className="w-full">
+              <Select value={activeTab} onValueChange={setActiveTab}>
+                <SelectTrigger className="w-full bg-white border-2 border-[#a87437]/60 shadow-lg rounded-lg h-12">
+                  <SelectValue placeholder="Select a section" />
+                </SelectTrigger>
+                <SelectContent>
+                  {tabOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            /* Desktop Navigation - Empty div since Tabs are in content section */
+            <div></div>
+          )}
+
+          {/* Tab Content */}
+          {isMobile ? (
+            /* Mobile Content */
+            <div className="space-y-4">
+              {activeTab === 'overview' && (
+                <div className="space-y-4">
+                  {loyaltyData?.available_rewards && loyaltyData.available_rewards.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {loyaltyData.available_rewards
+                        .filter(reward => !isRewardClaimed(reward.id))
+                        .map((reward) => (
+                        <Card key={reward.id} className="bg-white border-2 border-[#a87437] shadow-lg hover:shadow-xl transition-shadow duration-300">
+                          <CardHeader>
+                            <CardTitle className="flex items-center justify-between text-[#6B5B5B]">
+                              <span className="text-lg">{reward.name}</span>
+                              {getRewardTypeBadge(reward.reward_type)}
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            <p className="text-gray-600">{reward.description}</p>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Coins className="h-4 w-4 text-[#a87437]" />
+                                <span className="font-semibold text-[#6B5B5B]">{reward.points_required} points</span>
+                              </div>
+                              <Button
+                                onClick={() => claimReward(reward)}
+                                disabled={!loyaltyData || loyaltyData.loyalty_points < reward.points_required}
+                                className="bg-[#a87437] hover:bg-[#8f652f] text-white"
+                              >
+                                <Gift className="h-4 w-4 mr-2" />
+                                Claim
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <Gift className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                      <p>No rewards available</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {activeTab === 'points-history' && (
+                <div className="space-y-4">
+                  {loyaltyData?.points_earned_history && loyaltyData.points_earned_history.length > 0 ? (
+                    <div className="space-y-3">
+                      {loyaltyData.points_earned_history.map((history, index) => (
+                        <Card key={index} className="bg-white border-2 border-[#a87437] shadow-lg">
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-semibold text-[#6B5B5B]">Order #{history.order_id}</p>
+                                <p className="text-sm text-gray-600">{new Date(history.order_date).toLocaleDateString()}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-semibold text-green-600">+{history.points_earned} points</p>
+                                <p className="text-sm text-gray-600">₱{history.order_total}</p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <TrendingUp className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                      <p>No points history available</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {activeTab === 'redemption-history' && (
+                <div className="space-y-4">
+                  {claimedRewards.length > 0 ? (
+                    <div className="space-y-3">
+                      {claimedRewards.map((reward) => (
+                        <Card key={reward.id} className="bg-white border-2 border-[#a87437] shadow-lg">
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-semibold text-[#6B5B5B]">{reward.name}</p>
+                                <p className="text-sm text-gray-600">Expires: {new Date(reward.expiresAt).toLocaleDateString()}</p>
+                              </div>
+                              <div className="text-right">
+                                <Badge className={`${reward.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                                  {reward.status}
+                                </Badge>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <Receipt className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                      <p>No redemption history available</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Desktop Content */
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="grid grid-cols-3 bg-white border-2 border-[#a87437]/60 shadow-lg rounded-lg mx-auto w-[98%] sm:w-[96%] lg:w-[94%]">
+                {tabOptions.map((option) => (
+                  <TabsTrigger 
+                    key={option.value}
+                    value={option.value} 
+                    className="w-full justify-center data-[state=active]:bg-[#a87437] data-[state=active]:text-white text-sm px-3 py-3 whitespace-nowrap overflow-hidden text-ellipsis"
+                  >
+                    <span className="truncate">{option.label}</span>
             </TabsTrigger>
-            <TabsTrigger value="points-history" className="data-[state=active]:bg-[#a87437] data-[state=active]:text-white">
-              Points Earned History
-            </TabsTrigger>
-            <TabsTrigger value="redemption-history" className="data-[state=active]:bg-[#a87437] data-[state=active]:text-white">
-              Redemption History
-            </TabsTrigger>
+                ))}
           </TabsList>
 
           {/* Available Rewards Tab */}
-          <TabsContent value="overview" className="space-y-4">
+          <TabsContent value="overview" className="space-y-4 mx-2 sm:mx-3 lg:mx-4">
             {loyaltyData?.available_rewards && loyaltyData.available_rewards.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {loyaltyData.available_rewards
@@ -521,11 +743,17 @@ const CustomerLoyalty: React.FC = () => {
                           <span className="text-sm font-medium text-green-600">{claimedReward.status}</span>
                         </div>
                         <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Claim Code:</span>
+                          <span className="text-sm font-bold text-[#a87437] bg-[#a87437]/10 px-2 py-1 rounded">
+                            {claimedReward.claimCode}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-600">Expires in:</span>
                           <CountdownTimer expiresAt={claimedReward.expiresAt} />
                         </div>
                         <div className="text-xs text-[#a87437] text-center pt-2 border-t border-[#a87437]/20">
-                          ⚠️ Claim expires in 20 minutes. Visit the cafe to redeem!
+                          Claim expires in 20 minutes. Visit the cafe to redeem!
                         </div>
                       </CardContent>
                     </Card>
@@ -536,7 +764,7 @@ const CustomerLoyalty: React.FC = () => {
           </TabsContent>
 
           {/* Points Earned History Tab */}
-          <TabsContent value="points-history" className="space-y-4">
+          <TabsContent value="points-history" className="space-y-4 mx-2 sm:mx-3 lg:mx-4">
             {loyaltyData?.points_earned_history && loyaltyData.points_earned_history.length > 0 ? (
               <div className="space-y-4">
                 {loyaltyData.points_earned_history.map((history, index) => (
@@ -598,7 +826,7 @@ const CustomerLoyalty: React.FC = () => {
           </TabsContent>
 
           {/* Redemption History Tab */}
-          <TabsContent value="redemption-history" className="space-y-4">
+          <TabsContent value="redemption-history" className="space-y-4 mx-2 sm:mx-3 lg:mx-4">
             {loyaltyData?.redemption_history && loyaltyData.redemption_history.length > 0 ? (
               <div className="space-y-4">
                 {loyaltyData.redemption_history.map((redemption, index) => (
@@ -628,6 +856,8 @@ const CustomerLoyalty: React.FC = () => {
             )}
           </TabsContent>
         </Tabs>
+          )}
+        </div>
 
         {/* Message Display */}
         {message && (

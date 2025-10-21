@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Card, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { io, Socket } from 'socket.io-client';
 import { Star, MessageCircle, ThumbsUp } from 'lucide-react';
@@ -26,20 +25,17 @@ interface FeedbackMetrics {
 }
 
 export default function CustomerFeedback() {
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
   const { user, loading, authenticated } = useAuth();
   const navigate = useNavigate();
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
   const [metrics, setMetrics] = useState<(FeedbackMetrics & { ratingDistribution?: { [key: number]: number } }) | null>(null);
   const [loadingFeedbacks, setLoadingFeedbacks] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [, setSocket] = useState<Socket | null>(null);
   const [showAll, setShowAll] = useState(false);
   
-  // Form state
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState('');
-  const [category, setCategory] = useState('General');
-  const [showForm, setShowForm] = useState(false);
+  const [hasOrders, setHasOrders] = useState(false);
+  const [checkingOrders, setCheckingOrders] = useState(true);
 
   useEffect(() => {
     console.log('Auth state:', { loading, authenticated, user }); // Debug log
@@ -49,9 +45,11 @@ export default function CustomerFeedback() {
     }
     
     if (authenticated) {
+      // Check if customer has orders
+      checkCustomerOrders();
+      
       // Initialize Socket.IO connection
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-      const newSocket = io(API_URL);
+      const newSocket = io(API_URL, { transports: ['polling','websocket'], path: '/socket.io', withCredentials: true });
       setSocket(newSocket);
 
       // Join customer room for real-time updates
@@ -73,9 +71,36 @@ export default function CustomerFeedback() {
     }
   }, [loading, authenticated, navigate, user]);
 
+  const checkCustomerOrders = async () => {
+    if (!user?.email) {
+      setCheckingOrders(false);
+      return;
+    }
+
+    try {
+      setCheckingOrders(true);
+      const response = await fetch(`${API_URL}/api/feedback/check-orders?customer_email=${encodeURIComponent(user.email)}`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setHasOrders(data.hasOrders);
+      } else {
+        console.error('Error checking customer orders');
+        setHasOrders(false);
+      }
+    } catch (error) {
+      console.error('Error checking customer orders:', error);
+      setHasOrders(false);
+    } finally {
+      setCheckingOrders(false);
+    }
+  };
+
   const fetchFeedbacks = async () => {
     try {
-      const response = await fetch('/api/feedback', {
+      const response = await fetch(`${API_URL}/api/feedback`, {
         credentials: 'include'
       });
       if (response.ok) {
@@ -91,7 +116,7 @@ export default function CustomerFeedback() {
 
   const fetchMetrics = async () => {
     try {
-      const response = await fetch('/api/feedback/metrics', {
+      const response = await fetch(`${API_URL}/api/feedback/metrics`, {
         credentials: 'include'
       });
       if (response.ok) {
@@ -103,81 +128,7 @@ export default function CustomerFeedback() {
     }
   };
 
-  const handleSubmitFeedback = async (e: React.FormEvent) => {
-    e.preventDefault();
-    console.log('User object:', user); // Debug log
-    const customerName = user?.name || user?.username || user?.email || 'Anonymous';
-    console.log('Customer name:', customerName); // Debug log
-    if (!user) {
-      alert('Please log in to submit feedback');
-      return;
-    }
 
-    setSubmitting(true);
-    try {
-      const response = await fetch('/api/feedback', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          customer_name: customerName,
-          rating,
-          comment,
-          category
-        }),
-      });
-
-      if (response.ok) {
-        // Reset form
-        setRating(5);
-        setComment('');
-        setCategory('General');
-        setShowForm(false);
-        
-        // Refresh feedbacks and metrics
-        await fetchFeedbacks();
-        await fetchMetrics();
-        
-        alert('Thank you for your feedback!');
-      } else {
-        const error = await response.json();
-        alert(error.message || 'Failed to submit feedback');
-      }
-    } catch (error) {
-      console.error('Error submitting feedback:', error);
-      alert('Failed to submit feedback. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const renderStars = (rating: number, interactive = false, onStarClick?: (star: number) => void) => {
-    return (
-      <div className="flex gap-1">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <button
-            key={star}
-            type={interactive ? 'button' : undefined}
-            onClick={interactive ? () => onStarClick?.(star) : undefined}
-            className={`${interactive ? 'cursor-pointer hover:scale-110 transition-transform' : ''}`}
-            disabled={!interactive}
-            aria-label={`${star} star${star === 1 ? '' : 's'}`}
-            title={`${star} star${star === 1 ? '' : 's'}`}
-          >
-            <Star
-              className={`w-4 h-4 ${
-                star <= rating
-                  ? 'fill-yellow-400 text-yellow-400'
-                  : 'text-gray-300'
-              }`}
-            />
-          </button>
-        ))}
-      </div>
-    );
-  };
 
   const getCategoryColor = (category: string) => {
     const colors: { [key: string]: string } = {
@@ -213,7 +164,7 @@ export default function CustomerFeedback() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f5f5]">
+    <div className="min-h-screen bg-[#f5f5f5] pb-12">
       <div className="space-y-4 sm:space-y-6 mx-2 sm:mx-4 lg:mx-6 pt-4">
         {/* Header Section */}
         <div className="space-y-4 sm:space-y-6">
@@ -226,6 +177,19 @@ export default function CustomerFeedback() {
         </div>
 
         <div className="space-y-8">
+            {/* Order Requirement Notice */}
+            {!checkingOrders && !hasOrders && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-center gap-2 text-yellow-800">
+                  <MessageCircle className="h-5 w-5" />
+                  <span className="font-semibold">Feedback Requirement</span>
+                </div>
+                <p className="text-yellow-700 text-sm mt-1">
+                  To leave feedback, you must first place at least one order. This helps us ensure that feedback comes from customers who have actually experienced our service.
+                </p>
+              </div>
+            )}
+
             {/* Overall Rating and Satisfaction Metrics */}
             {metrics && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -307,80 +271,28 @@ export default function CustomerFeedback() {
               </div>
               
               {/* Share Experience Button */}
-              <Button
-                onClick={() => setShowForm(!showForm)}
-                className="bg-[#8B4513] hover:bg-[#7A3A0A] text-white px-6 py-3 text-lg font-semibold rounded-full shadow-lg"
-              >
-                {showForm ? 'Cancel' : 'Share your experience'}
-              </Button>
+              {checkingOrders ? (
+                <Button
+                  disabled
+                  className="bg-gray-400 text-white px-6 py-3 text-lg font-semibold rounded-full shadow-lg"
+                >
+                  Checking orders...
+                </Button>
+              ) : hasOrders ? (
+                <div></div>
+              ) : (
+                <div className="text-center">
+                  <Button
+                    disabled
+                    className="bg-gray-400 text-white px-6 py-3 text-lg font-semibold rounded-full shadow-lg mb-2"
+                  >
+                    Place an order to leave feedback
+                  </Button>
+                  <p className="text-sm text-gray-600">You need to place at least one order before leaving feedback</p>
+                </div>
+              )}
             </div>
 
-            {/* Feedback Form */}
-            {showForm && (
-              <Card className="bg-white">
-                <CardHeader>
-                  <CardTitle className="text-[#6B5B5B]">Share Your Feedback</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={handleSubmitFeedback} className="space-y-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Rating
-                      </label>
-                      {renderStars(rating, true, setRating)}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Category
-                      </label>
-                      <Select value={category} onValueChange={setCategory}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Food">Food & Drinks</SelectItem>
-                          <SelectItem value="Service">Service</SelectItem>
-                          <SelectItem value="Ambience">Ambience</SelectItem>
-                          <SelectItem value="General">General</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Your Experience
-                      </label>
-                      <textarea
-                        value={comment}
-                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setComment(e.target.value)}
-                        placeholder="Tell us about your experience at Mauricio's Cafe and Bakery..."
-                        className="min-h-[120px] w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6B5B5B] focus:border-transparent"
-                        required
-                      />
-                    </div>
-
-                    <div className="flex justify-end gap-4">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setShowForm(false)}
-                        disabled={submitting}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        type="submit"
-                        className="bg-[#6B5B5B] hover:bg-[#5A4A4A]"
-                        disabled={submitting}
-                      >
-                        {submitting ? 'Submitting...' : 'Submit Feedback'}
-                      </Button>
-                    </div>
-                  </form>
-                </CardContent>
-              </Card>
-            )}
 
             {/* Recent Reviews Section */}
             <div>

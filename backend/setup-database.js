@@ -3,27 +3,51 @@ const mysql = require('mysql2/promise');
 
 async function setupDatabase() {
     let connection;
-    
+
     try {
         console.log('🔄 Setting up database...');
-        
+
         // Connect to MySQL without specifying database
         connection = await mysql.createConnection({
             host: process.env.DB_HOST || 'localhost',
             user: process.env.DB_USER || 'root',
             password: process.env.DB_PASSWORD || ''
         });
-        
+
         console.log('✅ Connected to MySQL');
-        
+
         // Create database if it doesn't exist
         await connection.execute(`CREATE DATABASE IF NOT EXISTS ${process.env.DB_NAME || 'cafe_management'}`);
         console.log('✅ Database created/verified');
-        
+
         // Switch to the database
         await connection.execute(`USE ${process.env.DB_NAME || 'cafe_management'}`);
         console.log('✅ Switched to database');
-        
+
+        // Create feedback table
+        await connection.execute(`
+            CREATE TABLE IF NOT EXISTS feedback (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                customer_name VARCHAR(100) NOT NULL,
+                customer_email VARCHAR(100) NOT NULL,
+                order_id VARCHAR(50) DEFAULT NULL,
+                rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+                comment TEXT DEFAULT NULL,
+                category VARCHAR(50) DEFAULT 'General',
+                feedback_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                
+                INDEX idx_customer_email (customer_email),
+                INDEX idx_order_id (order_id),
+                INDEX idx_rating (rating),
+                INDEX idx_feedback_time (feedback_time),
+                
+                UNIQUE KEY unique_order_feedback (customer_email, order_id)
+            )
+        `);
+        console.log('✅ Feedback table created/verified');
+
         // Create basic tables if they don't exist
         await connection.execute(`
             CREATE TABLE IF NOT EXISTS users (
@@ -37,7 +61,7 @@ async function setupDatabase() {
             )
         `);
         console.log('✅ Users table created/verified');
-        
+
         await connection.execute(`
             CREATE TABLE IF NOT EXISTS staff (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -52,7 +76,7 @@ async function setupDatabase() {
             )
         `);
         console.log('✅ Staff table created/verified');
-        
+
         await connection.execute(`
             CREATE TABLE IF NOT EXISTS orders (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -77,7 +101,7 @@ async function setupDatabase() {
             )
         `);
         console.log('✅ Orders table created/verified');
-        
+
         // Add staff_id column if it doesn't exist (for existing databases)
         try {
             await connection.execute(`ALTER TABLE orders ADD COLUMN staff_id INT DEFAULT NULL`);
@@ -89,7 +113,7 @@ async function setupDatabase() {
                 throw error;
             }
         }
-        
+
         // Add foreign key constraint for staff_id
         try {
             await connection.execute(`ALTER TABLE orders ADD CONSTRAINT fk_orders_staff_id FOREIGN KEY (staff_id) REFERENCES users(id) ON DELETE SET NULL`);
@@ -101,7 +125,7 @@ async function setupDatabase() {
                 console.log('⚠️  Could not add foreign key constraint (this is OK if staff table doesn\'t exist yet)');
             }
         }
-        
+
         // Insert sample staff data for testing
         const [existingStaff] = await connection.execute('SELECT COUNT(*) as count FROM staff');
         if (existingStaff[0].count === 0) {
@@ -115,7 +139,7 @@ async function setupDatabase() {
         } else {
             console.log('✅ Staff data already exists');
         }
-        
+
         // Insert sample admin user
         const [existingAdmin] = await connection.execute('SELECT COUNT(*) as count FROM users WHERE role = "admin"');
         if (existingAdmin[0].count === 0) {
@@ -129,9 +153,9 @@ async function setupDatabase() {
         } else {
             console.log('✅ Admin user already exists');
         }
-        
+
         console.log('🎉 Database setup completed successfully!');
-        
+
     } catch (error) {
         console.error('❌ Database setup failed:', error.message);
         console.error('Full error:', error);
@@ -147,13 +171,3 @@ require('dotenv').config();
 
 // Run the setup
 setupDatabase();
-
-
-
-
-
-
-
-
-
-
