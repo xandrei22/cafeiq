@@ -51,8 +51,8 @@ router.post('/', async(req, res) => {
 
             await connection.query(`
                 INSERT INTO orders 
-                (order_id, order_number, customer_id, customer_name, table_number, items, total_price, status, payment_status, payment_method, notes, order_type, queue_position, estimated_ready_time, staff_id) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (order_id, order_number, customer_id, customer_name, table_number, items, total_price, status, payment_status, payment_method, notes, order_type, queue_position, estimated_ready_time, staff_id, created_at) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
             `, [orderId, orderNumber, customerId, customerName, tableNumber, JSON.stringify(items), totalPrice, orderStatus, paymentStatus, paymentMethod, notes, orderType, queuePosition, estimatedReadyTime, staffId]);
 
             // Generate QR code for payment if needed
@@ -158,7 +158,7 @@ router.get('/', async(req, res) => {
             params.push(tableNumber);
         }
 
-        sql += ' ORDER BY order_time DESC';
+        sql += ' ORDER BY created_at DESC';
 
         // Add pagination
         const offset = (page - 1) * limit;
@@ -216,8 +216,8 @@ router.get('/', async(req, res) => {
                 orderId: order.order_id,
                 customerName: order.customer_name,
                 tableNumber: order.table_number,
-                totalPrice: order.total_price,
-                orderTime: order.order_time,
+                totalPrice: order.total_amount,
+                orderTime: order.created_at,
                 paymentStatus: order.payment_status,
                 paymentMethod: order.payment_method,
                 items: enrichedItems,
@@ -277,7 +277,7 @@ router.get('/table/:tableNumber', async(req, res) => {
             params.push(status);
         }
 
-        sql += ' ORDER BY order_time DESC';
+        sql += ' ORDER BY created_at DESC';
 
         const [orders] = await db.query(sql, params);
 

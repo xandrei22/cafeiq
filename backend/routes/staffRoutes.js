@@ -1127,15 +1127,15 @@ router.post('/orders/:orderId/verify-payment', async(req, res) => {
             });
         }
 
-        // Update payment status only - let trigger handle status change
-        await db.query('UPDATE orders SET payment_status = ?, payment_method = ? WHERE id = ?', ['paid', paymentMethod || 'cash', order.id]);
+        // Update payment status and move to preparing status
+        await db.query('UPDATE orders SET payment_status = ?, payment_method = ?, status = ? WHERE id = ?', ['paid', paymentMethod || 'cash', 'preparing', order.id]);
 
         // Emit real-time update (canonical: confirmed + paid)
         const io = req.app.get('io');
         if (io) {
             const payload = {
                 orderId: order.order_id,
-                status: 'confirmed',
+                status: 'preparing',
                 paymentStatus: 'paid',
                 paymentMethod: paymentMethod || 'cash',
                 timestamp: new Date()

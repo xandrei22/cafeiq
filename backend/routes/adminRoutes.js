@@ -481,7 +481,7 @@ router.get('/dashboard/staff-sales', async(req, res) => {
             FROM orders o
             JOIN users u ON o.staff_id = u.id
             WHERE o.payment_status = 'paid'
-                AND o.order_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                AND o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
             GROUP BY u.id, u.first_name, u.last_name
             ORDER BY total_sales DESC
             LIMIT 6
@@ -513,11 +513,11 @@ router.get('/dashboard/staff-performance', async(req, res) => {
 
         if (period === 'day') {
             dateFormat = '%Y-%m-%d';
-            groupBy = 'DATE(o.order_time)';
+            groupBy = 'DATE(o.created_at)';
             interval = 'INTERVAL 7 DAY';
         } else {
             dateFormat = '%Y-%m';
-            groupBy = 'DATE_FORMAT(o.order_time, "%Y-%m")';
+            groupBy = 'DATE_FORMAT(o.created_at, "%Y-%m")';
             interval = 'INTERVAL 6 MONTH';
         }
 
@@ -533,7 +533,7 @@ router.get('/dashboard/staff-performance', async(req, res) => {
             FROM orders o
             JOIN users u ON o.staff_id = u.id
             WHERE o.payment_status = 'paid'
-                AND o.order_time >= DATE_SUB(NOW(), ${interval})
+                AND o.created_at >= DATE_SUB(NOW(), ${interval})
             GROUP BY u.id, u.first_name, u.last_name, ${groupBy}
             ORDER BY period DESC, total_sales DESC
         `);
@@ -546,7 +546,7 @@ router.get('/dashboard/staff-performance', async(req, res) => {
                 COUNT(o.id) as order_count
             FROM orders o
             WHERE o.payment_status = 'paid'
-                AND o.order_time >= DATE_SUB(NOW(), ${interval})
+                AND o.created_at >= DATE_SUB(NOW(), ${interval})
             GROUP BY ${groupBy}
             ORDER BY period ASC
         `);
@@ -1436,19 +1436,21 @@ router.post('/orders/:orderId/verify-payment', async(req, res) => {
             const orderItems = JSON.parse(order.items || '[]');
 
             // Check if ingredients were already deducted
-            const [deductionCheck] = await connection.query(`
-                SELECT COUNT(*) as count 
-                FROM inventory_transactions 
-                WHERE reference_type = 'order' AND reference_id = ? AND transaction_type = 'usage'
-            `, [orderId]);
+            // Note: inventory_transactions table doesn't exist in local database
+            // const [deductionCheck] = await connection.query(`
+            //     SELECT COUNT(*) as count 
+            //     FROM inventory_transactions 
+            //     WHERE reference_type = 'order' AND reference_id = ? AND transaction_type = 'usage'
+            // `, [orderId]);
 
             // Note: Ingredient deduction now happens when order is marked as 'ready', not during payment verification
 
-            // Update payment status only - let trigger handle status change
+            // Update payment status and move to preparing status
             await connection.query(`
                 UPDATE orders 
                 SET payment_status = 'paid', 
                     payment_method = ?,
+                    status = 'preparing',
                     updated_at = NOW() 
                 WHERE order_id = ? OR id = ?
             `, [paymentMethod || 'cash', orderId, orderId]);
@@ -1492,7 +1494,7 @@ router.post('/orders/:orderId/verify-payment', async(req, res) => {
 
                 const payload = {
                     orderId,
-                    status: 'confirmed',
+                    status: 'preparing',
                     paymentStatus: 'paid',
                     paymentMethod: paymentMethod || 'cash',
                     verifiedBy: verifiedBy || 'admin',
@@ -1516,7 +1518,7 @@ router.post('/orders/:orderId/verify-payment', async(req, res) => {
                 success: true,
                 message: 'Payment verified successfully',
                 orderId,
-                status: 'confirmed',
+                status: 'preparing',
                 paymentStatus: 'paid'
             });
 
@@ -3338,30 +3340,30 @@ router.get('/sales-original', async(req, res) => {
 
         if (startDate && endDate) {
             dateFilter = 'AND order_time BETWEEN ? AND ?';
-            dateFilterAliased = 'AND o.order_time BETWEEN ? AND ?';
+            dateFilterAliased = 'AND o.created_at BETWEEN ? AND ?';
             dateParams = [startDate, endDate];
         } else {
             // Default period filtering
             switch (period) {
                 case 'today':
                     dateFilter = 'AND DATE(order_time) = CURDATE()';
-                    dateFilterAliased = 'AND DATE(o.order_time) = CURDATE()';
+                    dateFilterAliased = 'AND DATE(o.created_at) = CURDATE()';
                     break;
                 case 'week':
                     dateFilter = 'AND order_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
-                    dateFilterAliased = 'AND o.order_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
+                    dateFilterAliased = 'AND o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
                     break;
                 case 'month':
                     dateFilter = 'AND order_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
-                    dateFilterAliased = 'AND o.order_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
+                    dateFilterAliased = 'AND o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
                     break;
                 case 'year':
                     dateFilter = 'AND order_time >= DATE_SUB(NOW(), INTERVAL 365 DAY)';
-                    dateFilterAliased = 'AND o.order_time >= DATE_SUB(NOW(), INTERVAL 365 DAY)';
+                    dateFilterAliased = 'AND o.created_at >= DATE_SUB(NOW(), INTERVAL 365 DAY)';
                     break;
                 default:
                     dateFilter = 'AND order_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
-                    dateFilterAliased = 'AND o.order_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
+                    dateFilterAliased = 'AND o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
             }
         }
 
@@ -4025,16 +4027,16 @@ router.get('/transactions/orders', ensureAdminAuthenticated, async(req, res) => 
         if (date && date !== 'all') {
             switch (date) {
                 case 'today':
-                    dateFilter = 'AND DATE(o.order_time) = CURDATE()';
+                    dateFilter = 'AND DATE(o.created_at) = CURDATE()';
                     break;
                 case 'week':
-                    dateFilter = 'AND o.order_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
+                    dateFilter = 'AND o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
                     break;
                 case 'month':
-                    dateFilter = 'AND o.order_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
+                    dateFilter = 'AND o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
                     break;
                 case 'year':
-                    dateFilter = 'AND o.order_time >= DATE_SUB(NOW(), INTERVAL 365 DAY)';
+                    dateFilter = 'AND o.created_at >= DATE_SUB(NOW(), INTERVAL 365 DAY)';
                     break;
             }
         }
@@ -4118,16 +4120,16 @@ router.get('/transactions/sales', async(req, res) => {
         if (date && date !== 'all') {
             switch (date) {
                 case 'today':
-                    dateFilter = 'AND DATE(o.order_time) = CURDATE()';
+                    dateFilter = 'AND DATE(o.created_at) = CURDATE()';
                     break;
                 case 'week':
-                    dateFilter = 'AND o.order_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
+                    dateFilter = 'AND o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
                     break;
                 case 'month':
-                    dateFilter = 'AND o.order_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
+                    dateFilter = 'AND o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
                     break;
                 case 'year':
-                    dateFilter = 'AND o.order_time >= DATE_SUB(NOW(), INTERVAL 365 DAY)';
+                    dateFilter = 'AND o.created_at >= DATE_SUB(NOW(), INTERVAL 365 DAY)';
                     break;
             }
         }
@@ -4169,10 +4171,10 @@ router.get('/transactions/sales', async(req, res) => {
                 o.id,
                 o.order_id,
                 o.customer_name,
-                o.total_price as total_amount,
+                o.total_amount as total_amount,
                 o.payment_method,
                 o.status,
-                o.order_time as created_at,
+                o.created_at as created_at,
                 JSON_LENGTH(o.items) as items_count,
                 pt.reference,
                 o.receipt_path
@@ -4183,7 +4185,7 @@ router.get('/transactions/sales', async(req, res) => {
             ${statusFilter}
             ${paymentMethodFilter}
             ${customerFilter}
-            ORDER BY o.order_time DESC
+            ORDER BY o.created_at DESC
             LIMIT ? OFFSET ?
         `, [...params, parseInt(limit), offset]);
 
@@ -4327,21 +4329,21 @@ router.get('/sales/download', async(req, res) => {
         const endDateToUse = exportEndDate || endDate;
 
         if (startDateToUse && endDateToUse) {
-            dateFilter = 'AND DATE(o.order_time) BETWEEN ? AND ?';
+            dateFilter = 'AND DATE(o.created_at) BETWEEN ? AND ?';
             params.push(startDateToUse, endDateToUse);
         } else if (period && period !== 'all') {
             switch (period) {
                 case 'today':
-                    dateFilter = 'AND DATE(o.order_time) = CURDATE()';
+                    dateFilter = 'AND DATE(o.created_at) = CURDATE()';
                     break;
                 case 'week':
-                    dateFilter = 'AND o.order_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
+                    dateFilter = 'AND o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
                     break;
                 case 'month':
-                    dateFilter = 'AND o.order_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
+                    dateFilter = 'AND o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
                     break;
                 case 'year':
-                    dateFilter = 'AND o.order_time >= DATE_SUB(NOW(), INTERVAL 365 DAY)';
+                    dateFilter = 'AND o.created_at >= DATE_SUB(NOW(), INTERVAL 365 DAY)';
                     break;
             }
         }
@@ -4372,10 +4374,10 @@ router.get('/sales/download', async(req, res) => {
                 o.id,
                 o.order_id,
                 o.customer_name,
-                o.total_price as total_amount,
+                o.total_amount as total_amount,
                 o.payment_method,
                 o.status,
-                o.order_time as created_at,
+                o.created_at as created_at,
                 JSON_LENGTH(o.items) as items_count,
                 pt.reference,
                 o.receipt_path
@@ -4386,7 +4388,7 @@ router.get('/sales/download', async(req, res) => {
             ${statusFilter}
             ${paymentMethodFilter}
             ${customerFilter}
-            ORDER BY o.order_time DESC
+            ORDER BY o.created_at DESC
         `, params);
 
         const transactions = sales.map(sale => ({
