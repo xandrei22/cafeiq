@@ -277,14 +277,19 @@ const AdminOrders: React.FC = () => {
       });
 
       if (response.ok) {
-        if (status === 'completed' || status === 'cancelled') {
-          setOrders(prev => prev.filter(o => o.orderId !== orderId));
-        } else {
-          fetchOrders({ silent: true });
-        }
+        // Always refresh orders to get the latest status
+        // This ensures orders move between tabs correctly
+        await fetchOrders({ silent: true });
+        
+        // Show success message
+        toast.success(`Order ${orderId} status updated to ${status}`);
+      } else {
+        const errorData = await response.json();
+        toast.error(`Failed to update order: ${errorData.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error updating order status:', error);
+      toast.error('Failed to update order status');
     }
   };
 
@@ -395,15 +400,15 @@ const AdminOrders: React.FC = () => {
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  // Only show actually accepted/being prepared orders here.
-  // Pending and pending_verification should NOT appear in Preparing.
-  const preparingStatuses = ['confirmed', 'preparing', 'processing'];
+  // Show orders that are being prepared or ready for preparation
+  // Include pending_verification orders (waiting for payment verification)
+  // Include confirmed/preparing orders (being prepared)
+  const preparingStatuses = ['confirmed', 'preparing', 'processing', 'pending_verification'];
   const readyStatuses = ['ready'];
 
   const preparingOrders = filteredOrders.filter(order => {
-    const paidPending = String(order.status) === 'pending' && String((order as any).paymentStatus || (order as any).payment_status) === 'paid';
-    const isPreparing = preparingStatuses.includes(String(order.status)) || paidPending;
-    console.log('Preparing filter check:', { orderId: order.orderId, status: order.status, paymentStatus: (order as any).paymentStatus, paidPending, isPreparing, preparingStatuses });
+    const isPreparing = preparingStatuses.includes(String(order.status));
+    console.log('Preparing filter check:', { orderId: order.orderId, status: order.status, isPreparing, preparingStatuses });
     return isPreparing;
   }).map((order, index) => ({
     ...order,
